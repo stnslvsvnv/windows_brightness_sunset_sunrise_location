@@ -42,3 +42,10 @@ Daily at 8:00 and 20:00
 Every 2 hours from 6:00 to 22:00
 
 Tests the installation and displays a report
+
+After installation:
+The script will be located at: C:\ProgramData\BrightnessController\BrightnessAutoAdjust.ps1
+
+Task in the scheduler: “Brightness Auto-Adjust”
+
+Log file: %TEMP%\BrightnessAdjustment.log
