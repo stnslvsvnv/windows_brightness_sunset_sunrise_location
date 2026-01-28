@@ -1,6 +1,10 @@
 # windows_brightness_sunset_sunrise_location
 Switches the brightness of the laptop display to 80% after sunrise and lowers it to 30% after sunset. 
 
+Shortest way is use this link https://github.com/stnslvsvnv/windows_brightness_sunset_sunrise_location/blob/main/NotebookAutoBrightnessSetup.exe 
+
+If you want to compile by yourself.. so, faggot, instructions below.
+
 Using the installer:
 1. Quick installation (with administrator rights):
 powershell
