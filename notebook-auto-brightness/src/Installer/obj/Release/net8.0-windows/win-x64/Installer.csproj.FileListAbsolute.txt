@@ -1,0 +1,15 @@
+C:\code\notebook-auto-brightness\src\Installer\bin\Release\net8.0-windows\win-x64\NotebookAutoBrightnessSetup.exe
+C:\code\notebook-auto-brightness\src\Installer\bin\Release\net8.0-windows\win-x64\NotebookAutoBrightnessSetup.deps.json
+C:\code\notebook-auto-brightness\src\Installer\bin\Release\net8.0-windows\win-x64\NotebookAutoBrightnessSetup.runtimeconfig.json
+C:\code\notebook-auto-brightness\src\Installer\bin\Release\net8.0-windows\win-x64\NotebookAutoBrightnessSetup.dll
+C:\code\notebook-auto-brightness\src\Installer\bin\Release\net8.0-windows\win-x64\NotebookAutoBrightnessSetup.pdb
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\Installer.GeneratedMSBuildEditorConfig.editorconfig
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\Installer.AssemblyInfoInputs.cache
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\Installer.AssemblyInfo.cs
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\Installer.csproj.CoreCompileInputs.cache
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\NotebookAutoBrightnessSetup.dll
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\refint\NotebookAutoBrightnessSetup.dll
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\NotebookAutoBrightnessSetup.pdb
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\Installer.genruntimeconfig.cache
+C:\code\notebook-auto-brightness\src\Installer\obj\Release\net8.0-windows\win-x64\ref\NotebookAutoBrightnessSetup.dll
+C:\code\notebook-auto-brightness\src\Installer\bin\Release\net8.0-windows\win-x64\app.ico

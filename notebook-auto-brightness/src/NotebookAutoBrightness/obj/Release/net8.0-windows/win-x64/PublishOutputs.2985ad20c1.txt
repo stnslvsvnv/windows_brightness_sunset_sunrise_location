@@ -1,0 +1,3 @@
+C:\code\notebook-auto-brightness\dist\app\NotebookSunriseSunsetAutoBrightness.pdb
+C:\code\notebook-auto-brightness\dist\app\app.ico
+C:\code\notebook-auto-brightness\dist\app\NotebookSunriseSunsetAutoBrightness.exe

@@ -1,0 +1,3 @@
+C:\code\notebook-auto-brightness\dist\installer\NotebookAutoBrightnessSetup.pdb
+C:\code\notebook-auto-brightness\dist\installer\app.ico
+C:\code\notebook-auto-brightness\dist\installer\NotebookAutoBrightnessSetup.exe

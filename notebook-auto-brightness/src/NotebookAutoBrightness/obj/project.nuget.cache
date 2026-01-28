@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "9qQXGXHd2gg=",
+  "success": true,
+  "projectFilePath": "C:\\code\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\User\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.23\\microsoft.net.illink.tasks.8.0.23.nupkg.sha512",
+    "C:\\Users\\User\\.nuget\\packages\\system.codedom\\8.0.0\\system.codedom.8.0.0.nupkg.sha512",
+    "C:\\Users\\User\\.nuget\\packages\\system.management\\8.0.0\\system.management.8.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}
