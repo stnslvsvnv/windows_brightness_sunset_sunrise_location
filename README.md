@@ -6,50 +6,52 @@ Shortest way is use this link https://github.com/stnslvsvnv/windows_brightness_s
 If you want to compile by yourself.. so, faggot, instructions below.
 
 Using the installer:
-1. Quick installation (with administrator rights):
-powershell
-powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1”
-2. Silent installation (without dialog boxes):
-powershell
-powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -Silent
-3. Installation in a specific folder:
-powershell
-powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -InstallPath “C:\MyScripts”
-4. Uninstallation:
-powershell
-powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -Uninstall
-What the installer does:
-Requests administrator rights (restarts automatically)
 
-Selects the installation folder (offers options or accepts a user-specified path)
+    1. Quick installation (with administrator rights):
+    powershell
+    powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1”
+    2. Silent installation (without dialog boxes):
+    powershell
+    powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -Silent
+    3. Installation in a specific folder:
+    powershell
+    powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -InstallPath “C:\MyScripts”
+    4. Uninstallation:
+    powershell
+    powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -Uninstall
+    What the installer does:
+    Requests administrator rights (restarts automatically)
 
-Creates the main script with the following functions:
-
-Automatic location detection (Windows API → IP geolocation → backup coordinates)
-
-Obtaining sunrise/sunset times via API
-
-Brightness adjustment via WMI
-
-Logging to a file
-
-Configures Windows geolocation services
-
-Creates a task in Task Scheduler with triggers:
-
-At system startup
-
-When the user logs in
-
-Daily at 8:00 and 20:00
-
-Every 2 hours from 6:00 to 22:00
-
-Tests the installation and displays a report
+    Selects the installation folder (offers options or accepts a user-specified path)
+    
+    Creates the main script with the following functions:
+    
+    Automatic location detection (Windows API → IP geolocation → backup coordinates)
+    
+    Obtaining sunrise/sunset times via API
+    
+    Brightness adjustment via WMI
+    
+    Logging to a file
+    
+    Configures Windows geolocation services
+    
+    Creates a task in Task Scheduler with triggers:
+    
+    At system startup
+    
+    When the user logs in
+    
+    Daily at 8:00 and 20:00
+    
+    Every 2 hours from 6:00 to 22:00
+    
+    Tests the installation and displays a report
 
 After installation:
-The script will be located at: C:\ProgramData\BrightnessController\BrightnessAutoAdjust.ps1
 
-Task in the scheduler: “Brightness Auto-Adjust”
-
-Log file: %TEMP%\BrightnessAdjustment.log
+    The script will be located at: C:\ProgramData\BrightnessController\BrightnessAutoAdjust.ps1
+    
+    Task in the scheduler: “Brightness Auto-Adjust”
+    
+    Log file: %TEMP%\BrightnessAdjustment.log
