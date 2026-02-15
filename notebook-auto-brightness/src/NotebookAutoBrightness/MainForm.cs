@@ -12,6 +12,8 @@ public sealed class MainForm : Form
 {
     private const string AppName = "Notebook sunrise/sunset auto brightness";
     private const string AutoRunValueName = "NotebookSunriseSunsetAutoBrightness";
+    private const int MinTransitionMinutes = 0;
+    private const int MaxTransitionMinutes = 20;
 
     private readonly NotifyIcon _trayIcon;
     private readonly Timer _timer;
@@ -36,8 +38,10 @@ public sealed class MainForm : Form
     private readonly DateTimePicker _nightStartPicker;
     private readonly TrackBar _dayBrightness;
     private readonly TrackBar _nightBrightness;
+    private readonly TrackBar _transitionDuration;
     private readonly Label _dayBrightnessValue;
     private readonly Label _nightBrightnessValue;
+    private readonly Label _transitionDurationValue;
     private readonly TextBox _cityTextBox;
     private readonly Label _locationLabel;
     private readonly Label _statusLabel;
@@ -101,9 +105,19 @@ public sealed class MainForm : Form
             TickFrequency = 10,
             Width = 320
         };
+        _transitionDuration = new TrackBar
+        {
+            Minimum = MinTransitionMinutes,
+            Maximum = MaxTransitionMinutes,
+            TickFrequency = 1,
+            SmallChange = 1,
+            LargeChange = 1,
+            Width = 320
+        };
 
         _dayBrightnessValue = new Label { AutoSize = true };
         _nightBrightnessValue = new Label { AutoSize = true };
+        _transitionDurationValue = new Label { AutoSize = true };
 
         _cityTextBox = new TextBox { Width = 240 };
         _locationLabel = new Label { AutoSize = true };
@@ -167,6 +181,9 @@ public sealed class MainForm : Form
         brightnessLayout.Controls.Add(new Label { Text = "Night brightness", AutoSize = true }, 0, 1);
         brightnessLayout.Controls.Add(_nightBrightness, 1, 1);
         brightnessLayout.Controls.Add(_nightBrightnessValue, 2, 1);
+        brightnessLayout.Controls.Add(new Label { Text = "Transition duration", AutoSize = true }, 0, 2);
+        brightnessLayout.Controls.Add(_transitionDuration, 1, 2);
+        brightnessLayout.Controls.Add(_transitionDurationValue, 2, 2);
         brightnessGroup.Controls.Add(brightnessLayout);
 
         var locationGroup = new GroupBox { Text = "Location", Dock = DockStyle.Top, AutoSize = true };
@@ -225,6 +242,7 @@ public sealed class MainForm : Form
         _nightStartPicker.ValueChanged += (_, _) => OnSettingsChanged();
         _dayBrightness.ValueChanged += (_, _) => OnBrightnessChanged();
         _nightBrightness.ValueChanged += (_, _) => OnBrightnessChanged();
+        _transitionDuration.ValueChanged += (_, _) => OnTransitionDurationChanged();
         _cityTextBox.TextChanged += (_, _) => OnSettingsChanged();
         _applyButton.Click += async (_, _) => await ApplyScheduleAsync(true);
     }
@@ -273,10 +291,12 @@ public sealed class MainForm : Form
         _autostartCheck.Checked = _settings.StartWithWindows;
         _dayBrightness.Value = Clamp(_settings.DayBrightness);
         _nightBrightness.Value = Clamp(_settings.NightBrightness);
+        _transitionDuration.Value = ClampTransitionMinutes(_settings.TransitionMinutes);
         _dayStartPicker.Value = DateTime.Today.Add(_settings.DayStartTime);
         _nightStartPicker.Value = DateTime.Today.Add(_settings.NightStartTime);
         _cityTextBox.Text = _settings.City ?? string.Empty;
         UpdateBrightnessLabels();
+        UpdateTransitionDurationLabel();
         UpdateLocationLabel();
         _suppressSave = false;
     }
@@ -285,12 +305,75 @@ public sealed class MainForm : Form
     {
         UpdateBrightnessLabels();
         OnSettingsChanged();
+
+        ApplyImmediateBrightnessPreview();
+    }
+
+    private void OnTransitionDurationChanged()
+    {
+        UpdateTransitionDurationLabel();
+        OnSettingsChanged();
+        ApplyImmediateBrightnessPreview();
     }
 
     private void UpdateBrightnessLabels()
     {
         _dayBrightnessValue.Text = $"{_dayBrightness.Value}%";
         _nightBrightnessValue.Text = $"{_nightBrightness.Value}%";
+    }
+
+    private void UpdateTransitionDurationLabel()
+    {
+        _transitionDurationValue.Text = _transitionDuration.Value == 0
+            ? "Immediately"
+            : $"{_transitionDuration.Value} min";
+    }
+
+    private void ApplyImmediateBrightnessPreview()
+    {
+        if (!_settings.Enabled)
+        {
+            return;
+        }
+
+        var now = DateTime.Now;
+        var transitionDuration = TimeSpan.FromMinutes(ClampTransitionMinutes(_transitionDuration.Value));
+        var isDay = IsCurrentlyDaytime(now);
+        var targetBrightness = isDay ? _dayBrightness.Value : _nightBrightness.Value;
+
+        if (transitionDuration > TimeSpan.Zero)
+        {
+            if (_settings.UseSunSchedule && _cachedSunTimes != null)
+            {
+                if (TryGetSunTransitionBrightness(
+                        now,
+                        _cachedSunTimes,
+                        transitionDuration,
+                        _dayBrightness.Value,
+                        _nightBrightness.Value,
+                        out var sunTransitionBrightness,
+                        out _,
+                        out _))
+                {
+                    targetBrightness = sunTransitionBrightness;
+                }
+            }
+            else if (TryGetManualTransitionBrightness(
+                now,
+                _settings.DayStartTime,
+                _settings.NightStartTime,
+                transitionDuration,
+                _dayBrightness.Value,
+                _nightBrightness.Value,
+                out var manualTransitionBrightness,
+                out _,
+                out _))
+            {
+                targetBrightness = manualTransitionBrightness;
+            }
+        }
+
+        BrightnessController.TrySetBrightness(targetBrightness, out _);
     }
 
     private void OnSettingsChanged()
@@ -306,6 +389,7 @@ public sealed class MainForm : Form
         _settings.StartWithWindows = _autostartCheck.Checked;
         _settings.DayBrightness = _dayBrightness.Value;
         _settings.NightBrightness = _nightBrightness.Value;
+        _settings.TransitionMinutes = ClampTransitionMinutes(_transitionDuration.Value);
         _settings.DayStartTime = _dayStartPicker.Value.TimeOfDay;
         _settings.NightStartTime = _nightStartPicker.Value.TimeOfDay;
         _settings.City = _cityTextBox.Text.Trim();
@@ -328,7 +412,6 @@ public sealed class MainForm : Form
         {
             return;
         }
-
         _isApplying = true;
         try
         {
@@ -337,11 +420,9 @@ public sealed class MainForm : Form
                 _statusLabel.Text = "Status: Disabled";
                 return;
             }
-
             var now = DateTime.Now;
             SunTimes? sunTimes = null;
             string scheduleSource = "Manual schedule";
-
             if (_settings.UseSunSchedule)
             {
                 var location = await ResolveLocationAsync(showMessages);
@@ -355,31 +436,65 @@ public sealed class MainForm : Form
                     scheduleSource = "Manual schedule (location required)";
                 }
             }
-
             var (isDay, nextChange) = sunTimes != null
                 ? GetPeriodFromSunTimes(now, sunTimes)
                 : GetPeriodFromManualTimes(now, _settings.DayStartTime, _settings.NightStartTime);
-
             var targetBrightness = isDay ? _settings.DayBrightness : _settings.NightBrightness;
+            var periodLabel = isDay ? "Day" : "Night";
+            var transitionDuration = TimeSpan.FromMinutes(ClampTransitionMinutes(_settings.TransitionMinutes));
 
-            if (_lastAppliedBrightness != targetBrightness)
+            if (transitionDuration > TimeSpan.Zero)
             {
-                if (BrightnessController.TrySetBrightness(targetBrightness, out var error))
+                if (sunTimes != null &&
+                    TryGetSunTransitionBrightness(
+                        now,
+                        sunTimes,
+                        transitionDuration,
+                        _settings.DayBrightness,
+                        _settings.NightBrightness,
+                        out var sunTransitionBrightness,
+                        out var sunTransitionLabel,
+                        out var sunTransitionEnd))
                 {
-                    _lastAppliedBrightness = targetBrightness;
+                    targetBrightness = sunTransitionBrightness;
+                    periodLabel = sunTransitionLabel;
+                    nextChange = sunTransitionEnd;
                 }
-                else if (showMessages)
+                else if (sunTimes == null && TryGetManualTransitionBrightness(
+                    now,
+                    _settings.DayStartTime,
+                    _settings.NightStartTime,
+                    transitionDuration,
+                    _settings.DayBrightness,
+                    _settings.NightBrightness,
+                    out var manualTransitionBrightness,
+                    out var manualTransitionLabel,
+                    out var manualTransitionEnd))
                 {
-                    MessageBox.Show(
-                        this,
-                        $"Failed to set brightness. {error}",
-                        AppName,
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
+                    targetBrightness = manualTransitionBrightness;
+                    periodLabel = manualTransitionLabel;
+                    nextChange = manualTransitionEnd;
                 }
             }
-
-            _statusLabel.Text = $"Status: {(isDay ? "Day" : "Night")} | {scheduleSource} | Next change: {nextChange:HH:mm}";
+            if (_lastAppliedBrightness != targetBrightness)
+            {
+                if (!BrightnessController.TrySetBrightness(targetBrightness, out var error))
+                {
+                    if (showMessages)
+                    {
+                        MessageBox.Show(
+                            this,
+                            $"Failed to set brightness. {error}",
+                            AppName,
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                    _statusLabel.Text = "Status: Failed to set brightness";
+                    return;
+                }
+                _lastAppliedBrightness = targetBrightness;
+            }
+            _statusLabel.Text = $"Status: {periodLabel} | {scheduleSource} | Next change: {nextChange:HH:mm}";
         }
         finally
         {
@@ -567,6 +682,152 @@ public sealed class MainForm : Form
         Close();
     }
 
+    private bool IsCurrentlyDaytime(DateTime now)
+    {
+        if (_settings.UseSunSchedule && _lastLocation != null)
+        {
+            var sunTimes = GetSunTimesAsync(_lastLocation, false).Result;
+            if (sunTimes != null)
+            {
+                var (isDay, _) = GetPeriodFromSunTimes(now, sunTimes);
+                return isDay;
+            }
+        }
+        
+        var (isDayManual, _) = GetPeriodFromManualTimes(now, _settings.DayStartTime, _settings.NightStartTime);
+        return isDayManual;
+    }
+
+    private static bool TryGetSunTransitionBrightness(
+        DateTime now,
+        SunTimes sunTimes,
+        TimeSpan transitionDuration,
+        int dayBrightness,
+        int nightBrightness,
+        out int brightness,
+        out string transitionLabel,
+        out DateTime transitionEnd)
+    {
+        for (var dayOffset = -1; dayOffset <= 1; dayOffset++)
+        {
+            var sunrise = sunTimes.Sunrise.AddDays(dayOffset);
+            if (TryGetTransitionBrightness(
+                    now,
+                    sunrise - transitionDuration,
+                    transitionDuration,
+                    nightBrightness,
+                    dayBrightness,
+                    out brightness))
+            {
+                transitionLabel = "Dawn";
+                transitionEnd = sunrise;
+                return true;
+            }
+
+            var sunset = sunTimes.Sunset.AddDays(dayOffset);
+            if (TryGetTransitionBrightness(
+                    now,
+                    sunset,
+                    transitionDuration,
+                    dayBrightness,
+                    nightBrightness,
+                    out brightness))
+            {
+                transitionLabel = "Twilight";
+                transitionEnd = sunset.Add(transitionDuration);
+                return true;
+            }
+        }
+
+        brightness = 0;
+        transitionLabel = string.Empty;
+        transitionEnd = DateTime.MinValue;
+        return false;
+    }
+
+    private static bool TryGetManualTransitionBrightness(
+        DateTime now,
+        TimeSpan dayStartTime,
+        TimeSpan nightStartTime,
+        TimeSpan transitionDuration,
+        int dayBrightness,
+        int nightBrightness,
+        out int brightness,
+        out string transitionLabel,
+        out DateTime transitionEnd)
+    {
+        for (var dayOffset = -1; dayOffset <= 1; dayOffset++)
+        {
+            var dayStart = now.Date.AddDays(dayOffset).Add(dayStartTime);
+            if (TryGetTransitionBrightness(
+                    now,
+                    dayStart - transitionDuration,
+                    transitionDuration,
+                    nightBrightness,
+                    dayBrightness,
+                    out brightness))
+            {
+                transitionLabel = "Dawn";
+                transitionEnd = dayStart;
+                return true;
+            }
+
+            var nightStart = now.Date.AddDays(dayOffset).Add(nightStartTime);
+            if (TryGetTransitionBrightness(
+                    now,
+                    nightStart,
+                    transitionDuration,
+                    dayBrightness,
+                    nightBrightness,
+                    out brightness))
+            {
+                transitionLabel = "Twilight";
+                transitionEnd = nightStart.Add(transitionDuration);
+                return true;
+            }
+        }
+
+        brightness = 0;
+        transitionLabel = string.Empty;
+        transitionEnd = DateTime.MinValue;
+        return false;
+    }
+
+    private static bool TryGetTransitionBrightness(
+        DateTime now,
+        DateTime transitionStart,
+        TimeSpan transitionDuration,
+        int fromBrightness,
+        int toBrightness,
+        out int brightness)
+    {
+        if (transitionDuration <= TimeSpan.Zero)
+        {
+            brightness = 0;
+            return false;
+        }
+
+        var transitionEnd = transitionStart.Add(transitionDuration);
+        if (now < transitionStart || now >= transitionEnd)
+        {
+            brightness = 0;
+            return false;
+        }
+
+        var progress = (now - transitionStart).TotalMilliseconds / transitionDuration.TotalMilliseconds;
+        brightness = InterpolateBrightness(fromBrightness, toBrightness, progress);
+        return true;
+    }
+
+    private static int InterpolateBrightness(int fromBrightness, int toBrightness, double progress)
+    {
+        var clampedProgress = Math.Max(0d, Math.Min(1d, progress));
+        var value = fromBrightness + ((toBrightness - fromBrightness) * clampedProgress);
+        return Clamp((int)Math.Round(value));
+    }
+
+    private static int ClampTransitionMinutes(int value) => Math.Min(MaxTransitionMinutes, Math.Max(MinTransitionMinutes, value));
+
     private static int Clamp(int value) => Math.Min(100, Math.Max(0, value));
 
     private static bool IsAutoStartEnabled()
@@ -587,3 +848,5 @@ public sealed class MainForm : Form
         key?.DeleteValue(AutoRunValueName, false);
     }
 }
+
+

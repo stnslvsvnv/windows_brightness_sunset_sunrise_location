@@ -1,57 +1,83 @@
-# windows_brightness_sunset_sunrise_location
-Switches the brightness of the laptop display to 80% after sunrise and lowers it to 30% after sunset. 
+# Windows Auto Brightness by Sunrise/Sunset
 
-Shortest way is use this link https://github.com/stnslvsvnv/windows_brightness_sunset_sunrise_location/blob/main/NotebookAutoBrightnessSetup.exe 
+A Windows app that automatically adjusts laptop screen brightness by time of day.
 
-If you want to compile by yourself.. so, faggot, instructions below.
+It can work by:
+- sunrise/sunset (based on your location), or
+- manual day/night schedule.
 
-Using the installer:
+## What It Does
 
-    1. Quick installation (with administrator rights):
-    powershell
-    powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1”
-    2. Silent installation (without dialog boxes):
-    powershell
-    powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -Silent
-    3. Installation in a specific folder:
-    powershell
-    powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -InstallPath “C:\MyScripts”
-    4. Uninstallation:
-    powershell
-    powershell -ExecutionPolicy Bypass -File “BrightnessInstaller.ps1” -Uninstall
-    What the installer does:
-    Requests administrator rights (restarts automatically)
+- Runs in tray and applies brightness automatically every minute.
+- Uses separate `Day brightness` and `Night brightness` values.
+- Supports smooth transitions:
+  - **Dawn**: gradually increases brightness before sunrise/day start.
+  - **Twilight**: gradually decreases brightness after sunset/night start.
+- Transition duration is configurable: **0 to 20 minutes** (step 1 minute).
+  - `0` means instant switch.
+- Can start with Windows.
+- Can detect location via IP geolocation, with fallback to city/manual settings.
 
-    Selects the installation folder (offers options or accepts a user-specified path)
-    
-    Creates the main script with the following functions:
-    
-    Automatic location detection (Windows API → IP geolocation → backup coordinates)
-    
-    Obtaining sunrise/sunset times via API
-    
-    Brightness adjustment via WMI
-    
-    Logging to a file
-    
-    Configures Windows geolocation services
-    
-    Creates a task in Task Scheduler with triggers:
-    
-    At system startup
-    
-    When the user logs in
-    
-    Daily at 8:00 and 20:00
-    
-    Every 2 hours from 6:00 to 22:00
-    
-    Tests the installation and displays a report
+## Quick Start (Ready Installer)
 
-After installation:
+Download and run:
+- `NotebookAutoBrightnessSetup.exe` (in this repository root)
 
-    The script will be located at: C:\ProgramData\BrightnessController\BrightnessAutoAdjust.ps1
-    
-    Task in the scheduler: “Brightness Auto-Adjust”
-    
-    Log file: %TEMP%\BrightnessAdjustment.log
+## Build From Source
+
+Requirements:
+- Windows 10/11
+- .NET 8 SDK
+
+Build app:
+
+```powershell
+cd notebook-auto-brightness
+dotnet build src/NotebookAutoBrightness/NotebookAutoBrightness.csproj
+```
+
+Run app from source:
+
+```powershell
+cd notebook-auto-brightness
+dotnet run --project src/NotebookAutoBrightness/NotebookAutoBrightness.csproj
+```
+
+Build installer:
+
+```powershell
+cd notebook-auto-brightness
+./build-installer.ps1
+```
+
+## Main Settings
+
+- `Enabled` - turns automation on/off.
+- `Use sunrise/sunset schedule` - uses astronomy times (if location is available).
+- `Use geolocation (IP-based)` - auto-detects coordinates.
+- `City` - fallback location if geolocation is unavailable.
+- `Day brightness` / `Night brightness` - brightness limits (0-100).
+- `Transition duration` - transition window in minutes (0-20).
+- `Start with Windows` - autorun.
+
+## How Transitions Work
+
+If transition duration is `N` minutes:
+- Morning: from `sunrise - N` to `sunrise` (night -> day brightness).
+- Evening: from `sunset` to `sunset + N` (day -> night brightness).
+
+In manual schedule mode:
+- Morning: from `day start - N` to `day start`.
+- Evening: from `night start` to `night start + N`.
+
+## Project Structure
+
+- `notebook-auto-brightness/src/NotebookAutoBrightness` - main WinForms app.
+- `notebook-auto-brightness/src/Installer` - installer project.
+- `notebook-auto-brightness/build-installer.ps1` - installer build script.
+- `NotebookAutoBrightnessSetup.exe` - prebuilt installer artifact.
+
+## Notes
+
+- Brightness control uses WMI and depends on hardware/driver support.
+- External monitors may not support this method.

@@ -13,6 +13,7 @@ public sealed class AppSettings
 
     public int DayBrightness { get; set; } = 80;
     public int NightBrightness { get; set; } = 33;
+    public int TransitionMinutes { get; set; } = 5;
 
     public string City { get; set; } = string.Empty;
 
