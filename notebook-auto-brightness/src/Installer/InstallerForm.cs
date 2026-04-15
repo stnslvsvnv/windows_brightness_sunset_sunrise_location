@@ -13,6 +13,7 @@ public sealed class InstallerForm : Form
     private readonly Button _installButton;
     private readonly Button _uninstallButton;
     private readonly CheckBox _launchCheckBox;
+    private readonly CheckBox _autoStartCheckBox;
     private readonly ProgressBar _progressBar;
     private readonly TextBox _installPathBox;
     private readonly Button _browseButton;
@@ -26,22 +27,7 @@ public sealed class InstallerForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(520, 300);
 
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "app.ico");
-        if (File.Exists(iconPath))
-        {
-            try
-            {
-                Icon = new Icon(iconPath);
-            }
-            catch
-            {
-                Icon = SystemIcons.Application;
-            }
-        }
-        else
-        {
-            Icon = SystemIcons.Application;
-        }
+        Icon = LoadAppIcon();
 
         var titleLabel = new Label
         {
@@ -56,6 +42,7 @@ public sealed class InstallerForm : Form
         _statusLabel = new Label { AutoSize = true };
         _progressBar = new ProgressBar { Style = ProgressBarStyle.Continuous, Width = 420, Height = 18 };
         _launchCheckBox = new CheckBox { Text = "Launch after install", AutoSize = true, Checked = true };
+        _autoStartCheckBox = new CheckBox { Text = "Start with Windows", AutoSize = true, Checked = true };
 
         _installButton = new Button { Text = "Install", Width = 120 };
         _uninstallButton = new Button { Text = "Uninstall", Width = 120 };
@@ -87,6 +74,7 @@ public sealed class InstallerForm : Form
         buttonPanel.Controls.Add(_installButton);
         buttonPanel.Controls.Add(_uninstallButton);
         buttonPanel.Controls.Add(_launchCheckBox);
+        buttonPanel.Controls.Add(_autoStartCheckBox);
         layout.Controls.Add(buttonPanel, 0, 5);
         layout.SetColumnSpan(buttonPanel, 2);
 
@@ -134,7 +122,7 @@ public sealed class InstallerForm : Form
 
         try
         {
-            var appPath = await Task.Run(() => InstallerOperations.Install(installDir));
+            var appPath = await Task.Run(() => InstallerOperations.Install(installDir, true, _autoStartCheckBox.Checked));
             _statusLabel.Text = "Installation complete.";
             _progressBar.Style = ProgressBarStyle.Continuous;
 
@@ -171,6 +159,30 @@ public sealed class InstallerForm : Form
             _installButton.Enabled = true;
             _uninstallButton.Enabled = InstallerOperations.IsInstalled();
             _browseButton.Enabled = true;
+        }
+    }
+
+    private static Icon LoadAppIcon()
+    {
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "app.ico");
+        if (File.Exists(iconPath))
+        {
+            try
+            {
+                return new Icon(iconPath);
+            }
+            catch
+            {
+            }
+        }
+
+        try
+        {
+            return Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
+        }
+        catch
+        {
+            return SystemIcons.Application;
         }
     }
 }

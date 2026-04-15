@@ -13,7 +13,8 @@ public sealed class MainForm : Form
     private const string AppName = "Notebook sunrise/sunset auto brightness";
     private const string AutoRunValueName = "NotebookSunriseSunsetAutoBrightness";
     private const int MinTransitionMinutes = 0;
-    private const int MaxTransitionMinutes = 20;
+    private const int MaxTransitionMinutes = 40;
+    private static readonly TimeSpan LocationRefreshInterval = TimeSpan.FromMinutes(30);
 
     private readonly NotifyIcon _trayIcon;
     private readonly Timer _timer;
@@ -25,6 +26,7 @@ public sealed class MainForm : Form
     private int? _lastAppliedBrightness;
 
     private LocationResult? _lastLocation;
+    private DateTime _lastResolvedLocationAtUtc = DateTime.MinValue;
     private SunTimes? _cachedSunTimes;
     private DateTime _cachedSunDate = DateTime.MinValue;
     private double? _cachedLat;
@@ -34,14 +36,17 @@ public sealed class MainForm : Form
     private readonly CheckBox _geolocationCheck;
     private readonly CheckBox _sunScheduleCheck;
     private readonly CheckBox _autostartCheck;
+    private readonly CheckBox _autoThemeCheck;
     private readonly DateTimePicker _dayStartPicker;
     private readonly DateTimePicker _nightStartPicker;
     private readonly TrackBar _dayBrightness;
     private readonly TrackBar _nightBrightness;
     private readonly TrackBar _transitionDuration;
+    private readonly TrackBar _themeSwitchLeadTime;
     private readonly Label _dayBrightnessValue;
     private readonly Label _nightBrightnessValue;
     private readonly Label _transitionDurationValue;
+    private readonly Label _themeSwitchLeadTimeValue;
     private readonly TextBox _cityTextBox;
     private readonly Label _locationLabel;
     private readonly Label _statusLabel;
@@ -54,29 +59,16 @@ public sealed class MainForm : Form
         MaximizeBox = false;
         MinimizeBox = true;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(640, 520);
+        ClientSize = new Size(640, 640);
+        AutoScroll = true;
 
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "app.ico");
-        if (File.Exists(iconPath))
-        {
-            try
-            {
-                Icon = new Icon(iconPath);
-            }
-            catch
-            {
-                Icon = SystemIcons.Application;
-            }
-        }
-        else
-        {
-            Icon = SystemIcons.Application;
-        }
+        Icon = LoadAppIcon();
 
         _enabledCheck = new CheckBox { Text = "Enabled", AutoSize = true };
         _geolocationCheck = new CheckBox { Text = "Use geolocation (IP-based)", AutoSize = true };
         _sunScheduleCheck = new CheckBox { Text = "Use sunrise/sunset schedule", AutoSize = true };
         _autostartCheck = new CheckBox { Text = "Start with Windows", AutoSize = true };
+        _autoThemeCheck = new CheckBox { Text = "Switch Windows theme before sunset/sunrise", AutoSize = true };
 
         _dayStartPicker = new DateTimePicker
         {
@@ -114,10 +106,20 @@ public sealed class MainForm : Form
             LargeChange = 1,
             Width = 320
         };
+        _themeSwitchLeadTime = new TrackBar
+        {
+            Minimum = MinTransitionMinutes,
+            Maximum = MaxTransitionMinutes,
+            TickFrequency = 1,
+            SmallChange = 1,
+            LargeChange = 1,
+            Width = 320
+        };
 
         _dayBrightnessValue = new Label { AutoSize = true };
         _nightBrightnessValue = new Label { AutoSize = true };
         _transitionDurationValue = new Label { AutoSize = true };
+        _themeSwitchLeadTimeValue = new Label { AutoSize = true };
 
         _cityTextBox = new TextBox { Width = 240 };
         _locationLabel = new Label { AutoSize = true };
@@ -129,8 +131,9 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(12),
             ColumnCount = 1,
-            RowCount = 5,
-            AutoSize = true
+            RowCount = 6,
+            AutoSize = true,
+            AutoScroll = true
         };
 
         var generalGroup = new GroupBox { Text = "General", Dock = DockStyle.Top, AutoSize = true };
@@ -138,6 +141,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
+            AutoScroll = true,
             FlowDirection = FlowDirection.TopDown
         };
         generalPanel.Controls.AddRange(new Control[]
@@ -145,7 +149,8 @@ public sealed class MainForm : Form
             _enabledCheck,
             _sunScheduleCheck,
             _geolocationCheck,
-            _autostartCheck
+            _autostartCheck,
+            _autoThemeCheck
         });
         generalGroup.Controls.Add(generalPanel);
 
@@ -186,6 +191,21 @@ public sealed class MainForm : Form
         brightnessLayout.Controls.Add(_transitionDurationValue, 2, 2);
         brightnessGroup.Controls.Add(brightnessLayout);
 
+        var themeGroup = new GroupBox { Text = "Theme", Dock = DockStyle.Top, AutoSize = true };
+        var themeLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            AutoSize = true
+        };
+        themeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        themeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        themeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        themeLayout.Controls.Add(new Label { Text = "Switch theme ahead of schedule", AutoSize = true }, 0, 0);
+        themeLayout.Controls.Add(_themeSwitchLeadTime, 1, 0);
+        themeLayout.Controls.Add(_themeSwitchLeadTimeValue, 2, 0);
+        themeGroup.Controls.Add(themeLayout);
+
         var locationGroup = new GroupBox { Text = "Location", Dock = DockStyle.Top, AutoSize = true };
         var locationLayout = new TableLayoutPanel
         {
@@ -213,6 +233,7 @@ public sealed class MainForm : Form
         mainLayout.Controls.Add(generalGroup);
         mainLayout.Controls.Add(scheduleGroup);
         mainLayout.Controls.Add(brightnessGroup);
+        mainLayout.Controls.Add(themeGroup);
         mainLayout.Controls.Add(locationGroup);
         mainLayout.Controls.Add(footerPanel);
 
@@ -231,18 +252,20 @@ public sealed class MainForm : Form
         _trayIcon.ContextMenuStrip = trayMenu;
         _trayIcon.DoubleClick += (_, _) => ShowMainWindow();
 
-        _timer = new Timer { Interval = 60_000 };
+        _timer = new Timer { Interval = 15_000 };
         _timer.Tick += async (_, _) => await ApplyScheduleAsync(false);
 
         _enabledCheck.CheckedChanged += (_, _) => OnSettingsChanged();
         _geolocationCheck.CheckedChanged += (_, _) => OnSettingsChanged();
         _sunScheduleCheck.CheckedChanged += (_, _) => OnSettingsChanged();
         _autostartCheck.CheckedChanged += (_, _) => OnSettingsChanged();
+        _autoThemeCheck.CheckedChanged += (_, _) => OnAutoThemeSettingChanged();
         _dayStartPicker.ValueChanged += (_, _) => OnSettingsChanged();
         _nightStartPicker.ValueChanged += (_, _) => OnSettingsChanged();
         _dayBrightness.ValueChanged += (_, _) => OnBrightnessChanged();
         _nightBrightness.ValueChanged += (_, _) => OnBrightnessChanged();
         _transitionDuration.ValueChanged += (_, _) => OnTransitionDurationChanged();
+        _themeSwitchLeadTime.ValueChanged += (_, _) => OnThemeSwitchLeadTimeChanged();
         _cityTextBox.TextChanged += (_, _) => OnSettingsChanged();
         _applyButton.Click += async (_, _) => await ApplyScheduleAsync(true);
     }
@@ -289,14 +312,18 @@ public sealed class MainForm : Form
         _geolocationCheck.Checked = _settings.UseGeolocation;
         _sunScheduleCheck.Checked = _settings.UseSunSchedule;
         _autostartCheck.Checked = _settings.StartWithWindows;
+        _autoThemeCheck.Checked = _settings.AutoThemeSwitching;
         _dayBrightness.Value = Clamp(_settings.DayBrightness);
         _nightBrightness.Value = Clamp(_settings.NightBrightness);
         _transitionDuration.Value = ClampTransitionMinutes(_settings.TransitionMinutes);
+        _themeSwitchLeadTime.Value = ClampTransitionMinutes(_settings.ThemeSwitchLeadMinutes);
         _dayStartPicker.Value = DateTime.Today.Add(_settings.DayStartTime);
         _nightStartPicker.Value = DateTime.Today.Add(_settings.NightStartTime);
         _cityTextBox.Text = _settings.City ?? string.Empty;
         UpdateBrightnessLabels();
         UpdateTransitionDurationLabel();
+        UpdateThemeSwitchLeadTimeLabel();
+        UpdateThemeSwitchControlsState();
         UpdateLocationLabel();
         _suppressSave = false;
     }
@@ -316,6 +343,20 @@ public sealed class MainForm : Form
         ApplyImmediateBrightnessPreview();
     }
 
+    private void OnThemeSwitchLeadTimeChanged()
+    {
+        UpdateThemeSwitchLeadTimeLabel();
+        OnSettingsChanged();
+        ApplyImmediateThemePreview();
+    }
+
+    private void OnAutoThemeSettingChanged()
+    {
+        UpdateThemeSwitchControlsState();
+        OnSettingsChanged();
+        ApplyImmediateThemePreview();
+    }
+
     private void UpdateBrightnessLabels()
     {
         _dayBrightnessValue.Text = $"{_dayBrightness.Value}%";
@@ -329,6 +370,19 @@ public sealed class MainForm : Form
             : $"{_transitionDuration.Value} min";
     }
 
+    private void UpdateThemeSwitchLeadTimeLabel()
+    {
+        _themeSwitchLeadTimeValue.Text = _themeSwitchLeadTime.Value == 0
+            ? "At sunrise/sunset"
+            : $"{_themeSwitchLeadTime.Value} min before";
+    }
+
+    private void UpdateThemeSwitchControlsState()
+    {
+        _themeSwitchLeadTime.Enabled = _autoThemeCheck.Checked;
+        _themeSwitchLeadTimeValue.Enabled = _autoThemeCheck.Checked;
+    }
+
     private void ApplyImmediateBrightnessPreview()
     {
         if (!_settings.Enabled)
@@ -336,44 +390,37 @@ public sealed class MainForm : Form
             return;
         }
 
-        var now = DateTime.Now;
-        var transitionDuration = TimeSpan.FromMinutes(ClampTransitionMinutes(_transitionDuration.Value));
-        var isDay = IsCurrentlyDaytime(now);
-        var targetBrightness = isDay ? _dayBrightness.Value : _nightBrightness.Value;
+        var evaluation = ScheduleCalculator.EvaluateBrightness(
+            DateTime.Now,
+            GetCachedSunTimesForPreview(),
+            _settings.DayStartTime,
+            _settings.NightStartTime,
+            _dayBrightness.Value,
+            _nightBrightness.Value,
+            TimeSpan.FromMinutes(ClampTransitionMinutes(_transitionDuration.Value)));
 
-        if (transitionDuration > TimeSpan.Zero)
+        BrightnessController.TrySetBrightness(evaluation.Brightness, out _);
+    }
+
+    private void ApplyImmediateThemePreview()
+    {
+        if (!_settings.Enabled || !_autoThemeCheck.Checked)
         {
-            if (_settings.UseSunSchedule && _cachedSunTimes != null)
-            {
-                if (TryGetSunTransitionBrightness(
-                        now,
-                        _cachedSunTimes,
-                        transitionDuration,
-                        _dayBrightness.Value,
-                        _nightBrightness.Value,
-                        out var sunTransitionBrightness,
-                        out _,
-                        out _))
-                {
-                    targetBrightness = sunTransitionBrightness;
-                }
-            }
-            else if (TryGetManualTransitionBrightness(
-                now,
-                _settings.DayStartTime,
-                _settings.NightStartTime,
-                transitionDuration,
-                _dayBrightness.Value,
-                _nightBrightness.Value,
-                out var manualTransitionBrightness,
-                out _,
-                out _))
-            {
-                targetBrightness = manualTransitionBrightness;
-            }
+            return;
         }
 
-        BrightnessController.TrySetBrightness(targetBrightness, out _);
+        var useLightTheme = ScheduleCalculator.ShouldUseLightTheme(
+            DateTime.Now,
+            GetCachedSunTimesForPreview(),
+            _settings.DayStartTime,
+            _settings.NightStartTime,
+            TimeSpan.FromMinutes(ClampTransitionMinutes(_themeSwitchLeadTime.Value)));
+
+        var targetTheme = useLightTheme ? WindowsThemeController.ThemeMode.Light : WindowsThemeController.ThemeMode.Dark;
+        if (WindowsThemeController.GetCurrentTheme() != targetTheme)
+        {
+            WindowsThemeController.SetTheme(targetTheme);
+        }
     }
 
     private void OnSettingsChanged()
@@ -383,16 +430,29 @@ public sealed class MainForm : Form
             return;
         }
 
+        var previousUseGeolocation = _settings.UseGeolocation;
+        var previousCity = _settings.City ?? string.Empty;
+
         _settings.Enabled = _enabledCheck.Checked;
         _settings.UseGeolocation = _geolocationCheck.Checked;
         _settings.UseSunSchedule = _sunScheduleCheck.Checked;
         _settings.StartWithWindows = _autostartCheck.Checked;
+        _settings.AutoThemeSwitching = _autoThemeCheck.Checked;
         _settings.DayBrightness = _dayBrightness.Value;
         _settings.NightBrightness = _nightBrightness.Value;
         _settings.TransitionMinutes = ClampTransitionMinutes(_transitionDuration.Value);
+        _settings.ThemeSwitchLeadMinutes = ClampTransitionMinutes(_themeSwitchLeadTime.Value);
         _settings.DayStartTime = _dayStartPicker.Value.TimeOfDay;
         _settings.NightStartTime = _nightStartPicker.Value.TimeOfDay;
         _settings.City = _cityTextBox.Text.Trim();
+
+        UpdateThemeSwitchControlsState();
+
+        if (previousUseGeolocation != _settings.UseGeolocation ||
+            !string.Equals(previousCity, _settings.City, StringComparison.Ordinal))
+        {
+            InvalidateLocationCache();
+        }
 
         if (_settings.StartWithWindows)
         {
@@ -436,46 +496,35 @@ public sealed class MainForm : Form
                     scheduleSource = "Manual schedule (location required)";
                 }
             }
-            var (isDay, nextChange) = sunTimes != null
-                ? GetPeriodFromSunTimes(now, sunTimes)
-                : GetPeriodFromManualTimes(now, _settings.DayStartTime, _settings.NightStartTime);
-            var targetBrightness = isDay ? _settings.DayBrightness : _settings.NightBrightness;
-            var periodLabel = isDay ? "Day" : "Night";
-            var transitionDuration = TimeSpan.FromMinutes(ClampTransitionMinutes(_settings.TransitionMinutes));
+            var brightnessEvaluation = ScheduleCalculator.EvaluateBrightness(
+                now,
+                sunTimes,
+                _settings.DayStartTime,
+                _settings.NightStartTime,
+                _settings.DayBrightness,
+                _settings.NightBrightness,
+                TimeSpan.FromMinutes(ClampTransitionMinutes(_settings.TransitionMinutes)));
+            var targetBrightness = brightnessEvaluation.Brightness;
+            var periodLabel = ScheduleCalculator.GetPhaseLabel(brightnessEvaluation.Phase);
+            var nextChange = brightnessEvaluation.NextChange;
 
-            if (transitionDuration > TimeSpan.Zero)
+            string? themeLabel = null;
+            if (_settings.AutoThemeSwitching)
             {
-                if (sunTimes != null &&
-                    TryGetSunTransitionBrightness(
-                        now,
-                        sunTimes,
-                        transitionDuration,
-                        _settings.DayBrightness,
-                        _settings.NightBrightness,
-                        out var sunTransitionBrightness,
-                        out var sunTransitionLabel,
-                        out var sunTransitionEnd))
-                {
-                    targetBrightness = sunTransitionBrightness;
-                    periodLabel = sunTransitionLabel;
-                    nextChange = sunTransitionEnd;
-                }
-                else if (sunTimes == null && TryGetManualTransitionBrightness(
+                var useLightTheme = ScheduleCalculator.ShouldUseLightTheme(
                     now,
+                    sunTimes,
                     _settings.DayStartTime,
                     _settings.NightStartTime,
-                    transitionDuration,
-                    _settings.DayBrightness,
-                    _settings.NightBrightness,
-                    out var manualTransitionBrightness,
-                    out var manualTransitionLabel,
-                    out var manualTransitionEnd))
+                    TimeSpan.FromMinutes(ClampTransitionMinutes(_settings.ThemeSwitchLeadMinutes)));
+                var targetTheme = useLightTheme ? WindowsThemeController.ThemeMode.Light : WindowsThemeController.ThemeMode.Dark;
+                themeLabel = useLightTheme ? "Light" : "Dark";
+                if (WindowsThemeController.GetCurrentTheme() != targetTheme)
                 {
-                    targetBrightness = manualTransitionBrightness;
-                    periodLabel = manualTransitionLabel;
-                    nextChange = manualTransitionEnd;
+                    WindowsThemeController.SetTheme(targetTheme);
                 }
             }
+
             if (_lastAppliedBrightness != targetBrightness)
             {
                 if (!BrightnessController.TrySetBrightness(targetBrightness, out var error))
@@ -494,7 +543,9 @@ public sealed class MainForm : Form
                 }
                 _lastAppliedBrightness = targetBrightness;
             }
-            _statusLabel.Text = $"Status: {periodLabel} | {scheduleSource} | Next change: {nextChange:HH:mm}";
+            _statusLabel.Text = _settings.AutoThemeSwitching
+                ? $"Status: {periodLabel} | {themeLabel} theme | {scheduleSource} | Next change: {nextChange:HH:mm}"
+                : $"Status: {periodLabel} | {scheduleSource} | Next change: {nextChange:HH:mm}";
         }
         finally
         {
@@ -504,15 +555,29 @@ public sealed class MainForm : Form
 
     private async Task<LocationResult?> ResolveLocationAsync(bool showMessages)
     {
+        if (CanReuseResolvedLocation())
+        {
+            UpdateLocationLabel();
+            return _lastLocation;
+        }
+
         if (_settings.UseGeolocation)
         {
             var ipLocation = await GeoService.TryGetIpLocationAsync();
             if (ipLocation != null)
             {
-                _lastLocation = ipLocation;
-                SaveLastLocation(ipLocation);
-                UpdateLocationLabel();
+                RememberLocation(ipLocation);
                 return ipLocation;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_settings.City))
+        {
+            var cityLocation = await GeoService.TryGeocodeCityAsync(_settings.City);
+            if (cityLocation != null)
+            {
+                RememberLocation(cityLocation);
+                return cityLocation;
             }
         }
 
@@ -527,18 +592,6 @@ public sealed class MainForm : Form
             _lastLocation = cached;
             UpdateLocationLabel();
             return cached;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_settings.City))
-        {
-            var cityLocation = await GeoService.TryGeocodeCityAsync(_settings.City);
-            if (cityLocation != null)
-            {
-                _lastLocation = cityLocation;
-                SaveLastLocation(cityLocation);
-                UpdateLocationLabel();
-                return cityLocation;
-            }
         }
 
         if (showMessages)
@@ -587,53 +640,39 @@ public sealed class MainForm : Form
         return null;
     }
 
-    private static (bool IsDay, DateTime NextChange) GetPeriodFromSunTimes(DateTime now, SunTimes sunTimes)
+    private SunTimes? GetCachedSunTimesForPreview()
     {
-        if (now >= sunTimes.Sunrise && now < sunTimes.Sunset)
-        {
-            return (true, sunTimes.Sunset);
-        }
-
-        var next = sunTimes.Sunrise;
-        if (now >= sunTimes.Sunset)
-        {
-            next = sunTimes.Sunrise.AddDays(1);
-        }
-
-        return (false, next);
+        return _settings.UseSunSchedule &&
+               _cachedSunTimes != null &&
+               _cachedSunDate.Date == DateTime.Today
+            ? _cachedSunTimes
+            : null;
     }
 
-    private static (bool IsDay, DateTime NextChange) GetPeriodFromManualTimes(DateTime now, TimeSpan dayStart, TimeSpan nightStart)
+    private bool CanReuseResolvedLocation()
     {
-        var todayDay = now.Date.Add(dayStart);
-        var todayNight = now.Date.Add(nightStart);
+        return _lastLocation != null &&
+               !string.Equals(_lastLocation.Source, "Last known", StringComparison.Ordinal) &&
+               DateTime.UtcNow - _lastResolvedLocationAtUtc < LocationRefreshInterval;
+    }
 
-        if (dayStart < nightStart)
-        {
-            if (now < todayDay)
-            {
-                return (false, todayDay);
-            }
+    private void RememberLocation(LocationResult location)
+    {
+        _lastLocation = location;
+        _lastResolvedLocationAtUtc = DateTime.UtcNow;
+        SaveLastLocation(location);
+        UpdateLocationLabel();
+    }
 
-            if (now < todayNight)
-            {
-                return (true, todayNight);
-            }
-
-            return (false, todayDay.AddDays(1));
-        }
-
-        if (now >= todayDay)
-        {
-            return (true, todayNight.AddDays(1));
-        }
-
-        if (now < todayNight)
-        {
-            return (true, todayNight);
-        }
-
-        return (false, todayDay);
+    private void InvalidateLocationCache()
+    {
+        _lastLocation = null;
+        _lastResolvedLocationAtUtc = DateTime.MinValue;
+        _cachedSunTimes = null;
+        _cachedSunDate = DateTime.MinValue;
+        _cachedLat = null;
+        _cachedLon = null;
+        UpdateLocationLabel();
     }
 
     private void SaveLastLocation(LocationResult location)
@@ -649,16 +688,37 @@ public sealed class MainForm : Form
     {
         if (_lastLocation != null)
         {
-            _locationLabel.Text = $"{_lastLocation.City} {_lastLocation.Country} [{_lastLocation.Latitude:F4}, {_lastLocation.Longitude:F4}]";
+            _locationLabel.Text = FormatLocationLabel(
+                _lastLocation.City,
+                _lastLocation.Country,
+                _lastLocation.Latitude,
+                _lastLocation.Longitude,
+                _lastLocation.Source);
         }
         else if (_settings.LastLatitude.HasValue && _settings.LastLongitude.HasValue)
         {
-            _locationLabel.Text = $"{_settings.LastCity} {_settings.LastCountry} [{_settings.LastLatitude:F4}, {_settings.LastLongitude:F4}]";
+            _locationLabel.Text = FormatLocationLabel(
+                _settings.LastCity,
+                _settings.LastCountry,
+                _settings.LastLatitude.Value,
+                _settings.LastLongitude.Value,
+                "Last known");
         }
         else
         {
             _locationLabel.Text = "Not set";
         }
+    }
+
+    private static string FormatLocationLabel(string? city, string? country, double latitude, double longitude, string source)
+    {
+        var place = $"{city} {country}".Trim();
+        if (string.IsNullOrWhiteSpace(place))
+        {
+            place = "Unknown location";
+        }
+
+        return $"{place} [{latitude:F4}, {longitude:F4}] via {source}";
     }
 
     private void ShowMainWindow()
@@ -682,153 +742,33 @@ public sealed class MainForm : Form
         Close();
     }
 
-    private bool IsCurrentlyDaytime(DateTime now)
-    {
-        if (_settings.UseSunSchedule && _lastLocation != null)
-        {
-            var sunTimes = GetSunTimesAsync(_lastLocation, false).Result;
-            if (sunTimes != null)
-            {
-                var (isDay, _) = GetPeriodFromSunTimes(now, sunTimes);
-                return isDay;
-            }
-        }
-        
-        var (isDayManual, _) = GetPeriodFromManualTimes(now, _settings.DayStartTime, _settings.NightStartTime);
-        return isDayManual;
-    }
-
-    private static bool TryGetSunTransitionBrightness(
-        DateTime now,
-        SunTimes sunTimes,
-        TimeSpan transitionDuration,
-        int dayBrightness,
-        int nightBrightness,
-        out int brightness,
-        out string transitionLabel,
-        out DateTime transitionEnd)
-    {
-        for (var dayOffset = -1; dayOffset <= 1; dayOffset++)
-        {
-            var sunrise = sunTimes.Sunrise.AddDays(dayOffset);
-            if (TryGetTransitionBrightness(
-                    now,
-                    sunrise - transitionDuration,
-                    transitionDuration,
-                    nightBrightness,
-                    dayBrightness,
-                    out brightness))
-            {
-                transitionLabel = "Dawn";
-                transitionEnd = sunrise;
-                return true;
-            }
-
-            var sunset = sunTimes.Sunset.AddDays(dayOffset);
-            if (TryGetTransitionBrightness(
-                    now,
-                    sunset,
-                    transitionDuration,
-                    dayBrightness,
-                    nightBrightness,
-                    out brightness))
-            {
-                transitionLabel = "Twilight";
-                transitionEnd = sunset.Add(transitionDuration);
-                return true;
-            }
-        }
-
-        brightness = 0;
-        transitionLabel = string.Empty;
-        transitionEnd = DateTime.MinValue;
-        return false;
-    }
-
-    private static bool TryGetManualTransitionBrightness(
-        DateTime now,
-        TimeSpan dayStartTime,
-        TimeSpan nightStartTime,
-        TimeSpan transitionDuration,
-        int dayBrightness,
-        int nightBrightness,
-        out int brightness,
-        out string transitionLabel,
-        out DateTime transitionEnd)
-    {
-        for (var dayOffset = -1; dayOffset <= 1; dayOffset++)
-        {
-            var dayStart = now.Date.AddDays(dayOffset).Add(dayStartTime);
-            if (TryGetTransitionBrightness(
-                    now,
-                    dayStart - transitionDuration,
-                    transitionDuration,
-                    nightBrightness,
-                    dayBrightness,
-                    out brightness))
-            {
-                transitionLabel = "Dawn";
-                transitionEnd = dayStart;
-                return true;
-            }
-
-            var nightStart = now.Date.AddDays(dayOffset).Add(nightStartTime);
-            if (TryGetTransitionBrightness(
-                    now,
-                    nightStart,
-                    transitionDuration,
-                    dayBrightness,
-                    nightBrightness,
-                    out brightness))
-            {
-                transitionLabel = "Twilight";
-                transitionEnd = nightStart.Add(transitionDuration);
-                return true;
-            }
-        }
-
-        brightness = 0;
-        transitionLabel = string.Empty;
-        transitionEnd = DateTime.MinValue;
-        return false;
-    }
-
-    private static bool TryGetTransitionBrightness(
-        DateTime now,
-        DateTime transitionStart,
-        TimeSpan transitionDuration,
-        int fromBrightness,
-        int toBrightness,
-        out int brightness)
-    {
-        if (transitionDuration <= TimeSpan.Zero)
-        {
-            brightness = 0;
-            return false;
-        }
-
-        var transitionEnd = transitionStart.Add(transitionDuration);
-        if (now < transitionStart || now >= transitionEnd)
-        {
-            brightness = 0;
-            return false;
-        }
-
-        var progress = (now - transitionStart).TotalMilliseconds / transitionDuration.TotalMilliseconds;
-        brightness = InterpolateBrightness(fromBrightness, toBrightness, progress);
-        return true;
-    }
-
-    private static int InterpolateBrightness(int fromBrightness, int toBrightness, double progress)
-    {
-        var clampedProgress = Math.Max(0d, Math.Min(1d, progress));
-        var value = fromBrightness + ((toBrightness - fromBrightness) * clampedProgress);
-        return Clamp((int)Math.Round(value));
-    }
-
     private static int ClampTransitionMinutes(int value) => Math.Min(MaxTransitionMinutes, Math.Max(MinTransitionMinutes, value));
 
     private static int Clamp(int value) => Math.Min(100, Math.Max(0, value));
+
+    private static Icon LoadAppIcon()
+    {
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "app.ico");
+        if (File.Exists(iconPath))
+        {
+            try
+            {
+                return new Icon(iconPath);
+            }
+            catch
+            {
+            }
+        }
+
+        try
+        {
+            return Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
+        }
+        catch
+        {
+            return SystemIcons.Application;
+        }
+    }
 
     private static bool IsAutoStartEnabled()
     {
@@ -839,7 +779,7 @@ public sealed class MainForm : Form
     private static void EnableAutoStart()
     {
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-        key?.SetValue(AutoRunValueName, Application.ExecutablePath);
+        key?.SetValue(AutoRunValueName, $"\"{Application.ExecutablePath}\"");
     }
 
     private static void DisableAutoStart()
@@ -848,5 +788,3 @@ public sealed class MainForm : Form
         key?.DeleteValue(AutoRunValueName, false);
     }
 }
-
-

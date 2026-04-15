@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\code\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj": {}
+    "C:\\code\\notebook-auto-brightness\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj": {}
   },
   "projects": {
-    "C:\\code\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj": {
+    "C:\\code\\notebook-auto-brightness\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\code\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj",
+        "projectUniqueName": "C:\\code\\notebook-auto-brightness\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj",
         "projectName": "NotebookSunriseSunsetAutoBrightness",
-        "projectPath": "C:\\code\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj",
+        "projectPath": "C:\\code\\notebook-auto-brightness\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\NotebookAutoBrightness.csproj",
         "packagesPath": "C:\\Users\\User\\.nuget\\packages\\",
-        "outputPath": "C:\\code\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\obj\\",
+        "outputPath": "C:\\code\\notebook-auto-brightness\\notebook-auto-brightness\\src\\NotebookAutoBrightness\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\User\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -43,12 +43,6 @@
         "net8.0-windows7.0": {
           "targetAlias": "net8.0-windows",
           "dependencies": {
-            "Microsoft.NET.ILLink.Tasks": {
-              "suppressParent": "All",
-              "target": "Package",
-              "version": "[8.0.23, )",
-              "autoReferenced": true
-            },
             "System.Management": {
               "target": "Package",
               "version": "[8.0.0, )"
@@ -65,6 +59,20 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
+              "version": "[8.0.26, 8.0.26]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Runtime.win-x64",
+              "version": "[8.0.26, 8.0.26]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
+              "version": "[8.0.26, 8.0.26]"
+            }
+          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
@@ -73,7 +81,7 @@
               "privateAssets": "none"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.417/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.420/PortableRuntimeIdentifierGraph.json"
         }
       },
       "runtimes": {

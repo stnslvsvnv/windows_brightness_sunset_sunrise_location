@@ -1,0 +1,13 @@
+.idea/
+.venv/
+$null
+/app.ico
+/brightness_installer.ps1
+/build-installer.ps1
+/main.py
+/NotebookSunriseSunsetAutoBrightness.exe
+/NotebookSunriseSunsetAutoBrightness.pdb
+/src/
+**/bin/
+**/obj/
+dist/

@@ -10,10 +10,12 @@ public sealed class AppSettings
     public bool UseGeolocation { get; set; } = true;
     public bool UseSunSchedule { get; set; } = true;
     public bool StartWithWindows { get; set; } = false;
+    public bool AutoThemeSwitching { get; set; } = false;
 
     public int DayBrightness { get; set; } = 80;
     public int NightBrightness { get; set; } = 33;
     public int TransitionMinutes { get; set; } = 5;
+    public int ThemeSwitchLeadMinutes { get; set; } = 0;
 
     public string City { get; set; } = string.Empty;
 

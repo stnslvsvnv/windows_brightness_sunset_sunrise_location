@@ -32,8 +32,9 @@ public static class InstallerOperations
         return !string.IsNullOrWhiteSpace(installDir) && File.Exists(Path.Combine(installDir, AppExeName));
     }
 
-    public static string Install(string installDir)
+    public static string Install(string installDir, bool createShortcut = true, bool autoStart = true)
     {
+        CloseRunningApp();
         Directory.CreateDirectory(installDir);
         ExtractPayload(installDir);
 
@@ -45,8 +46,84 @@ public static class InstallerOperations
         }
 
         var appPath = Path.Combine(installDir, AppExeName);
+        
+        // Create shortcut in Start Menu
+        if (createShortcut)
+        {
+            CreateStartMenuShortcut(appPath);
+        }
+        
+        // Enable auto-start if requested
+        if (autoStart)
+        {
+            EnableAutoStart(appPath);
+        }
+        
         WriteUninstallRegistry(installDir, uninstallPath, appPath);
         return appPath;
+    }
+
+    private static void CreateStartMenuShortcut(string appPath)
+    {
+        try
+        {
+            var startMenuDir = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu);
+            var programsDir = Path.Combine(startMenuDir, "Programs");
+            var appDir = Path.Combine(programsDir, "Notebook Auto Brightness");
+            Directory.CreateDirectory(appDir);
+
+            var shortcutPath = Path.Combine(appDir, "Notebook Auto Brightness.lnk");
+            CreateShortcut(shortcutPath, appPath, appPath, 0);
+        }
+        catch
+        {
+            // Ignore shortcut creation failures
+        }
+    }
+
+    private static void CreateShortcut(string shortcutPath, string targetPath, string iconPath, int iconIndex)
+    {
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType == null) return;
+            
+            var shell = Activator.CreateInstance(shellType);
+            var createShortcutMethod = shellType.GetMethod("CreateShortcut");
+            var shortcut = createShortcutMethod?.Invoke(shell, new object[] { shortcutPath });
+            
+            if (shortcut != null)
+            {
+                var targetPathProperty = shortcut.GetType().GetProperty("TargetPath");
+                var iconLocationProperty = shortcut.GetType().GetProperty("IconLocation");
+                var descriptionProperty = shortcut.GetType().GetProperty("Description");
+                var workingDirectoryProperty = shortcut.GetType().GetProperty("WorkingDirectory");
+                var saveMethod = shortcut.GetType().GetMethod("Save");
+                
+                targetPathProperty?.SetValue(shortcut, targetPath);
+                iconLocationProperty?.SetValue(shortcut, $"{iconPath},{iconIndex}");
+                descriptionProperty?.SetValue(shortcut, "Auto-adjust screen brightness by sunrise/sunset");
+                workingDirectoryProperty?.SetValue(shortcut, Path.GetDirectoryName(targetPath));
+                saveMethod?.Invoke(shortcut, null);
+            }
+        }
+        catch
+        {
+            // Ignore shortcut creation failures
+        }
+    }
+
+    private static void EnableAutoStart(string appPath)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+            key?.SetValue(AutoRunValueName, $"\"{appPath}\"");
+        }
+        catch
+        {
+            // Ignore auto-start failures
+        }
     }
 
     public static void UninstallInteractive()
@@ -128,14 +205,32 @@ public static class InstallerOperations
     {
         CloseRunningApp();
         RemoveAutoStart();
+        RemoveStartMenuShortcut();
 
-        var appPath = Path.Combine(installDir, AppExeName);
-        if (Directory.Exists(installDir) && File.Exists(appPath))
+        if (Directory.Exists(installDir))
         {
             Directory.Delete(installDir, true);
         }
 
         RemoveUninstallRegistry();
+    }
+
+    private static void RemoveStartMenuShortcut()
+    {
+        try
+        {
+            var startMenuDir = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu);
+            var programsDir = Path.Combine(startMenuDir, "Programs");
+            var appDir = Path.Combine(programsDir, "Notebook Auto Brightness");
+            if (Directory.Exists(appDir))
+            {
+                Directory.Delete(appDir, true);
+            }
+        }
+        catch
+        {
+            // Ignore shortcut removal failures
+        }
     }
 
     private static void ExtractPayload(string installDir)

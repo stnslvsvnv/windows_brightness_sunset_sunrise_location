@@ -8,15 +8,16 @@ It can work by:
 
 ## What It Does
 
-- Runs in tray and applies brightness automatically every minute.
+- Runs in tray and applies brightness automatically every 15 seconds.
 - Uses separate `Day brightness` and `Night brightness` values.
-- Supports smooth transitions:
+- Supports smooth transitions with cosine easing:
   - **Dawn**: gradually increases brightness before sunrise/day start.
   - **Twilight**: gradually decreases brightness after sunset/night start.
 - Transition duration is configurable: **0 to 20 minutes** (step 1 minute).
   - `0` means instant switch.
+- **Auto-switch Windows theme**: dark theme at night, light theme during the day.
 - Can start with Windows.
-- Can detect location via IP geolocation, with fallback to city/manual settings.
+- Can detect location via IP geolocation, with fallback to city and last known location.
 
 ## Quick Start (Ready Installer)
 
@@ -55,9 +56,12 @@ cd notebook-auto-brightness
 - `Enabled` - turns automation on/off.
 - `Use sunrise/sunset schedule` - uses astronomy times (if location is available).
 - `Use geolocation (IP-based)` - auto-detects coordinates.
-- `City` - fallback location if geolocation is unavailable.
+- `City` - fallback location if geolocation is off or unavailable.
 - `Day brightness` / `Night brightness` - brightness limits (0-100).
 - `Transition duration` - transition window in minutes (0-20).
+- `Auto-switch Windows theme (dark at night)` - automatically switches Windows theme:
+  - **Light theme** during the day (at sunrise/day start).
+  - **Dark theme** at night (at sunset/night start).
 - `Start with Windows` - autorun.
 
 ## How Transitions Work
@@ -81,3 +85,4 @@ In manual schedule mode:
 
 - Brightness control uses WMI and depends on hardware/driver support.
 - External monitors may not support this method.
+- Windows theme switching updates both theme registry values and broadcasts the change to running apps.

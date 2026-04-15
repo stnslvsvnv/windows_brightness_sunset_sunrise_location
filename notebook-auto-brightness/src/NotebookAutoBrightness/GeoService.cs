@@ -23,6 +23,90 @@ public static class GeoService
     {
         try
         {
+            var location = await TryGetIpWhoIsLocationAsync();
+            if (location != null)
+            {
+                return location;
+            }
+
+            location = await TryGetIpApiCoLocationAsync();
+            if (location != null)
+            {
+                return location;
+            }
+
+            return await TryGetIpApiLocationAsync();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<LocationResult?> TryGetIpWhoIsLocationAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("https://ipwho.is/");
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var payload = await response.Content.ReadAsStringAsync();
+            var data = JsonSerializer.Deserialize<IpWhoIsResponse>(payload);
+            if (data == null || !data.Success)
+            {
+                return null;
+            }
+
+            return new LocationResult(
+                data.Latitude,
+                data.Longitude,
+                data.City ?? string.Empty,
+                data.Country ?? string.Empty,
+                "IP Geolocation");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<LocationResult?> TryGetIpApiCoLocationAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync("https://ipapi.co/json/");
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var payload = await response.Content.ReadAsStringAsync();
+            var data = JsonSerializer.Deserialize<IpApiCoResponse>(payload);
+            if (data == null || data.Error || data.Latitude == null || data.Longitude == null)
+            {
+                return null;
+            }
+
+            return new LocationResult(
+                data.Latitude.Value,
+                data.Longitude.Value,
+                data.City ?? string.Empty,
+                data.CountryName ?? data.Country ?? string.Empty,
+                "IP Geolocation");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<LocationResult?> TryGetIpApiLocationAsync()
+    {
+        try
+        {
             using var response = await Http.GetAsync("http://ip-api.com/json/");
             if (!response.IsSuccessStatusCode)
             {
@@ -100,6 +184,45 @@ public static class GeoService
 
         [JsonPropertyName("city")]
         public string? City { get; set; }
+
+        [JsonPropertyName("country")]
+        public string? Country { get; set; }
+    }
+
+    private sealed class IpWhoIsResponse
+    {
+        [JsonPropertyName("success")]
+        public bool Success { get; set; }
+
+        [JsonPropertyName("latitude")]
+        public double Latitude { get; set; }
+
+        [JsonPropertyName("longitude")]
+        public double Longitude { get; set; }
+
+        [JsonPropertyName("city")]
+        public string? City { get; set; }
+
+        [JsonPropertyName("country")]
+        public string? Country { get; set; }
+    }
+
+    private sealed class IpApiCoResponse
+    {
+        [JsonPropertyName("error")]
+        public bool Error { get; set; }
+
+        [JsonPropertyName("latitude")]
+        public double? Latitude { get; set; }
+
+        [JsonPropertyName("longitude")]
+        public double? Longitude { get; set; }
+
+        [JsonPropertyName("city")]
+        public string? City { get; set; }
+
+        [JsonPropertyName("country_name")]
+        public string? CountryName { get; set; }
 
         [JsonPropertyName("country")]
         public string? Country { get; set; }
