@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("NotebookAutoBrightnessSetup")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6cc7c929a3339dfe59adfac1dbf361ebb875d428")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ded5594d99c4f949dfcaa130fcd8c5cb64cfd5e6")]
 [assembly: System.Reflection.AssemblyProductAttribute("NotebookAutoBrightnessSetup")]
 [assembly: System.Reflection.AssemblyTitleAttribute("NotebookAutoBrightnessSetup")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

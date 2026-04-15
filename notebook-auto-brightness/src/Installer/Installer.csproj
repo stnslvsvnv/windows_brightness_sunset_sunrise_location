@@ -10,6 +10,9 @@
     <ApplicationIcon>..\Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Shared\Ui\*.cs" LinkBase="Ui" />
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource Include="payload.zip" />
   </ItemGroup>
   <ItemGroup>
