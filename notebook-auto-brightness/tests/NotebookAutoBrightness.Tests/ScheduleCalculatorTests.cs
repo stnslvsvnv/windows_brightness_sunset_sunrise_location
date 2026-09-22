@@ -119,4 +119,122 @@ public sealed class ScheduleCalculatorTests
 
         Assert.True(useLightTheme);
     }
+
+    [Fact]
+    public void ThemeLeadEndsTwilightRampAtTheSwitchMoment()
+    {
+        var sunTimes = new SunTimes(
+            new DateTime(2026, 4, 15, 6, 0, 0),
+            new DateTime(2026, 4, 15, 20, 0, 0));
+        var lead = TimeSpan.FromMinutes(15);
+        var shifted = ScheduleCalculator.ShiftForThemeLead(sunTimes, lead);
+        var beforeSwitch = new DateTime(2026, 4, 15, 19, 44, 59);
+        var atSwitch = new DateTime(2026, 4, 15, 19, 45, 0);
+
+        var twilight = ScheduleCalculator.EvaluateBrightness(
+            beforeSwitch,
+            shifted,
+            new TimeSpan(7, 0, 0),
+            new TimeSpan(19, 0, 0),
+            dayBrightness: 80,
+            nightBrightness: 30,
+            transitionDuration: TimeSpan.FromMinutes(10));
+        var night = ScheduleCalculator.EvaluateBrightness(
+            atSwitch,
+            shifted,
+            new TimeSpan(7, 0, 0),
+            new TimeSpan(19, 0, 0),
+            dayBrightness: 80,
+            nightBrightness: 30,
+            transitionDuration: TimeSpan.FromMinutes(10));
+
+        Assert.Equal(SchedulePhase.Twilight, twilight.Phase);
+        Assert.Equal(30, twilight.Brightness);
+        Assert.Equal(SchedulePhase.Night, night.Phase);
+        Assert.Equal(30, night.Brightness);
+        Assert.True(ScheduleCalculator.ShouldUseLightTheme(
+            beforeSwitch, sunTimes, new TimeSpan(7, 0, 0), new TimeSpan(19, 0, 0), lead));
+        Assert.False(ScheduleCalculator.ShouldUseLightTheme(
+            atSwitch, sunTimes, new TimeSpan(7, 0, 0), new TimeSpan(19, 0, 0), lead));
+    }
+
+    [Fact]
+    public void ThemeLeadEndsDawnRampAtTheSwitchMoment()
+    {
+        var sunTimes = new SunTimes(
+            new DateTime(2026, 4, 15, 6, 0, 0),
+            new DateTime(2026, 4, 15, 20, 0, 0));
+        var lead = TimeSpan.FromMinutes(15);
+        var shifted = ScheduleCalculator.ShiftForThemeLead(sunTimes, lead);
+        var beforeSwitch = new DateTime(2026, 4, 15, 5, 44, 59);
+        var atSwitch = new DateTime(2026, 4, 15, 5, 45, 0);
+
+        var dawn = ScheduleCalculator.EvaluateBrightness(
+            beforeSwitch,
+            shifted,
+            new TimeSpan(7, 0, 0),
+            new TimeSpan(19, 0, 0),
+            dayBrightness: 80,
+            nightBrightness: 30,
+            transitionDuration: TimeSpan.FromMinutes(10));
+        var day = ScheduleCalculator.EvaluateBrightness(
+            atSwitch,
+            shifted,
+            new TimeSpan(7, 0, 0),
+            new TimeSpan(19, 0, 0),
+            dayBrightness: 80,
+            nightBrightness: 30,
+            transitionDuration: TimeSpan.FromMinutes(10));
+
+        Assert.Equal(SchedulePhase.Dawn, dawn.Phase);
+        Assert.Equal(80, dawn.Brightness);
+        Assert.Equal(SchedulePhase.Day, day.Phase);
+        Assert.Equal(80, day.Brightness);
+        Assert.False(ScheduleCalculator.ShouldUseLightTheme(
+            beforeSwitch, sunTimes, new TimeSpan(7, 0, 0), new TimeSpan(19, 0, 0), lead));
+        Assert.True(ScheduleCalculator.ShouldUseLightTheme(
+            atSwitch, sunTimes, new TimeSpan(7, 0, 0), new TimeSpan(19, 0, 0), lead));
+    }
+
+    [Fact]
+    public void ThemeLeadMovesManualNightTransitionAsWell()
+    {
+        var lead = TimeSpan.FromMinutes(15);
+        var dayStart = new TimeSpan(7, 0, 0) - lead;
+        var nightStart = new TimeSpan(19, 0, 0) - lead;
+
+        var twilight = ScheduleCalculator.EvaluateBrightness(
+            new DateTime(2026, 4, 15, 18, 44, 59),
+            sunTimes: null,
+            dayStart,
+            nightStart,
+            dayBrightness: 80,
+            nightBrightness: 30,
+            transitionDuration: TimeSpan.FromMinutes(10));
+        var night = ScheduleCalculator.EvaluateBrightness(
+            new DateTime(2026, 4, 15, 18, 45, 0),
+            sunTimes: null,
+            dayStart,
+            nightStart,
+            dayBrightness: 80,
+            nightBrightness: 30,
+            transitionDuration: TimeSpan.FromMinutes(10));
+
+        Assert.Equal(SchedulePhase.Twilight, twilight.Phase);
+        Assert.Equal(30, twilight.Brightness);
+        Assert.Equal(SchedulePhase.Night, night.Phase);
+        Assert.Equal(30, night.Brightness);
+    }
+
+    [Fact]
+    public void ZeroThemeLeadKeepsScheduleUntouched()
+    {
+        var sunTimes = new SunTimes(
+            new DateTime(2026, 4, 15, 6, 0, 0),
+            new DateTime(2026, 4, 15, 20, 0, 0));
+
+        var shifted = ScheduleCalculator.ShiftForThemeLead(sunTimes, TimeSpan.Zero);
+
+        Assert.Same(sunTimes, shifted);
+    }
 }
