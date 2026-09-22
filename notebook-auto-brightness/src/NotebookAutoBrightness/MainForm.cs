@@ -523,7 +523,7 @@ internal sealed class MainForm : Form
         value == 0 ? "Instant" : $"{value} min";
 
     private static string FormatThemeLead(int value) =>
-        value == 0 ? "At sun shift" : $"{value} min early";
+        value == 0 ? "No lead" : $"{value} min earlier (theme + transition)";
 
     private static int ClampTransitionMinutes(int value) => Math.Clamp(value, MinTransitionMinutes, MaxTransitionMinutes);
 

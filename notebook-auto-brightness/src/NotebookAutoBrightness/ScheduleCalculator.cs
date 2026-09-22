@@ -76,16 +76,21 @@ internal static class ScheduleCalculator
     {
         if (sunTimes != null)
         {
-            var shiftedSunTimes = switchLeadTime > TimeSpan.Zero
-                ? new SunTimes(sunTimes.Sunrise - switchLeadTime, sunTimes.Sunset - switchLeadTime)
-                : sunTimes;
-            return GetPeriodFromSunTimes(now, shiftedSunTimes).IsDay;
+            return GetPeriodFromSunTimes(now, ShiftForThemeLead(sunTimes, switchLeadTime)).IsDay;
         }
 
         var shiftedDayStart = dayStartTime - switchLeadTime;
         var shiftedNightStart = nightStartTime - switchLeadTime;
         return GetPeriodFromManualTimes(now, shiftedDayStart, shiftedNightStart).IsDay;
     }
+
+    // The theme lead moves the moment the theme switches earlier; the brightness schedule is shifted
+    // by the same amount so the twilight ramp ends (and the dawn ramp finishes) exactly at that moment
+    // instead of overlapping it.
+    public static SunTimes ShiftForThemeLead(SunTimes sunTimes, TimeSpan switchLeadTime) =>
+        switchLeadTime > TimeSpan.Zero
+            ? new SunTimes(sunTimes.Sunrise - switchLeadTime, sunTimes.Sunset - switchLeadTime)
+            : sunTimes;
 
     public static string GetPhaseLabel(SchedulePhase phase) =>
         phase switch
