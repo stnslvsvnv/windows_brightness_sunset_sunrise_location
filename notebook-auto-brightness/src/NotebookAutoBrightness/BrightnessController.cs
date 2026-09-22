@@ -27,4 +27,34 @@ public static class BrightnessController
             return false;
         }
     }
+
+    public static bool TryGetBrightness(out int percent, out string? error)
+    {
+        percent = 0;
+        error = null;
+
+        try
+        {
+            using var searcher = new ManagementObjectSearcher("root\\WMI", "SELECT * FROM WmiMonitorBrightness");
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                var value = obj["CurrentBrightness"];
+                if (value == null)
+                {
+                    continue;
+                }
+
+                percent = Convert.ToInt32(value);
+                return true;
+            }
+
+            error = "No compatible monitor was found.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
 }
