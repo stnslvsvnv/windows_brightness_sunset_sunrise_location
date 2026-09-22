@@ -14,6 +14,8 @@ public static class WindowsThemeController
     private const uint WmThemeChanged = 0x031A;
     private const uint SmtoAbortIfHung = 0x0002;
 
+    private static ThemeMode? _lastAppliedTheme;
+
     public enum ThemeMode
     {
         Light = 1,
@@ -34,12 +36,27 @@ public static class WindowsThemeController
             key.SetValue(AppsUseLightTheme, value, RegistryValueKind.DWord);
             key.SetValue(SystemUsesLightTheme, value, RegistryValueKind.DWord);
             BroadcastThemeChange();
+            _lastAppliedTheme = mode;
             return true;
         }
         catch
         {
             return false;
         }
+    }
+
+    // Switches the theme only when it really differs and reports whether a switch (and its
+    // system-wide broadcast) happened. An unreadable registry value is not a reason to broadcast
+    // again: once we have set the theme ourselves, that value is treated as the current one.
+    public static bool EnsureTheme(ThemeMode mode)
+    {
+        var current = GetCurrentTheme();
+        if (current == mode || (current == null && _lastAppliedTheme == mode))
+        {
+            return false;
+        }
+
+        return SetTheme(mode);
     }
 
     public static bool SetLightTheme() => SetTheme(ThemeMode.Light);

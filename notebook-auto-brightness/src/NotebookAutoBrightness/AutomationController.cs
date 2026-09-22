@@ -9,19 +9,33 @@ internal sealed class AutomationController
 {
     private const int MinTransitionMinutes = 0;
     private const int MaxTransitionMinutes = 40;
+    private const int BrightnessTolerancePercent = 2;
+    private const int VerifyIntervalTicks = 4;
+    private const double CoordinateTolerance = 0.01;
+    private const string LastKnownLocationSource = "Last known";
+    internal const string SunScheduleSource = "Sunrise and sunset";
+    internal const string SunScheduleSourceCached = "Sunrise and sunset (cached)";
+    internal const string ManualScheduleSource = "Manual schedule";
     private static readonly TimeSpan LocationRefreshInterval = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan LastKnownLocationTtl = TimeSpan.FromHours(6);
+    private static readonly TimeSpan SunTimesRetryInterval = TimeSpan.FromMinutes(10);
 
     private readonly string _executablePath;
 
     private AppSettings _settings = new();
     private bool _isApplying;
     private int? _lastAppliedBrightness;
+    private int _tickCount;
+    private bool _reassertBrightnessOnNextTick;
     private LocationResult? _lastLocation;
     private DateTime _lastResolvedLocationAtUtc = DateTime.MinValue;
     private SunTimes? _cachedSunTimes;
     private DateTime _cachedSunDate = DateTime.MinValue;
     private double? _cachedLat;
     private double? _cachedLon;
+    private SunTimes? _lastKnownSunTimes;
+    private DateTime _sunTimesRetryAfterUtc = DateTime.MinValue;
+    private bool _usingStaleSunTimes;
 
     public AutomationController(string executablePath)
     {
@@ -32,6 +46,10 @@ internal sealed class AutomationController
     public event Action<AutomationStatus>? StatusChanged;
 
     public event Action? SettingsChanged;
+
+    // Raised right after the Windows theme was switched, so the host can re-apply the brightness
+    // once the display stack has settled.
+    public event Action? ThemeChanged;
 
     public AutomationStatus CurrentStatus { get; private set; }
 
@@ -46,7 +64,7 @@ internal sealed class AutomationController
 
     public void UpdateSettings(AppSettings settings)
     {
-        var normalized = NormalizeSettings(settings);
+        var normalized = PreserveLastKnownLocation(NormalizeSettings(settings), _settings);
         var previousUseGeolocation = _settings.UseGeolocation;
         var previousCity = _settings.City ?? string.Empty;
 
@@ -71,7 +89,7 @@ internal sealed class AutomationController
         UpdateSettings(settings);
     }
 
-    public async Task<AutomationStatus> ApplyScheduleAsync(bool showMessages, IWin32Window? owner = null)
+    public async Task<AutomationStatus> ApplyScheduleAsync(bool showMessages, IWin32Window? owner = null, bool forceBrightness = false)
     {
         if (_isApplying)
         {
@@ -97,9 +115,8 @@ internal sealed class AutomationController
                 return paused;
             }
 
-            var now = DateTime.Now;
             SunTimes? sunTimes = null;
-            var scheduleSource = "Manual schedule";
+            var scheduleSource = ManualScheduleSource;
 
             if (_settings.UseSunSchedule)
             {
@@ -107,7 +124,11 @@ internal sealed class AutomationController
                 if (location != null)
                 {
                     sunTimes = await GetSunTimesAsync(location, showMessages, owner);
-                    scheduleSource = sunTimes == null ? "Manual schedule fallback" : "Sunrise and sunset";
+                    scheduleSource = sunTimes == null
+                        ? "Manual schedule fallback"
+                        : _usingStaleSunTimes
+                            ? SunScheduleSourceCached
+                            : SunScheduleSource;
                 }
                 else
                 {
@@ -115,15 +136,24 @@ internal sealed class AutomationController
                 }
             }
 
+            var now = DateTime.Now;
+
+            var themeLead = TimeSpan.FromMinutes(ClampTransitionMinutes(_settings.ThemeSwitchLeadMinutes));
+            var shiftSchedule = _settings.AutoThemeSwitching && themeLead > TimeSpan.Zero;
+            var brightnessSunTimes = shiftSchedule && sunTimes != null
+                ? ScheduleCalculator.ShiftForThemeLead(sunTimes, themeLead)
+                : sunTimes;
+
             var brightnessEvaluation = ScheduleCalculator.EvaluateBrightness(
                 now,
-                sunTimes,
-                _settings.DayStartTime,
-                _settings.NightStartTime,
+                brightnessSunTimes,
+                shiftSchedule ? _settings.DayStartTime - themeLead : _settings.DayStartTime,
+                shiftSchedule ? _settings.NightStartTime - themeLead : _settings.NightStartTime,
                 _settings.DayBrightness,
                 _settings.NightBrightness,
                 TimeSpan.FromMinutes(ClampTransitionMinutes(_settings.TransitionMinutes)));
 
+            var themeChanged = false;
             string themeLabel;
             if (_settings.AutoThemeSwitching)
             {
@@ -132,13 +162,9 @@ internal sealed class AutomationController
                     sunTimes,
                     _settings.DayStartTime,
                     _settings.NightStartTime,
-                    TimeSpan.FromMinutes(ClampTransitionMinutes(_settings.ThemeSwitchLeadMinutes)));
+                    themeLead);
                 var targetTheme = useLightTheme ? WindowsThemeController.ThemeMode.Light : WindowsThemeController.ThemeMode.Dark;
-                if (WindowsThemeController.GetCurrentTheme() != targetTheme)
-                {
-                    _ = WindowsThemeController.SetTheme(targetTheme);
-                }
-
+                themeChanged = WindowsThemeController.EnsureTheme(targetTheme);
                 themeLabel = useLightTheme ? "Light" : "Dark";
             }
             else
@@ -146,7 +172,24 @@ internal sealed class AutomationController
                 themeLabel = GetCurrentThemeLabel();
             }
 
-            if (_lastAppliedBrightness != brightnessEvaluation.Brightness)
+            _tickCount++;
+            var reassertBrightness = forceBrightness || _reassertBrightnessOnNextTick;
+            _reassertBrightnessOnNextTick = false;
+
+            if (themeChanged)
+            {
+                // A theme switch broadcasts a system-wide setting change and the display stack can
+                // re-apply the power plan brightness right after it, so write now and once more on
+                // the next tick instead of trusting the value that was just set.
+                reassertBrightness = true;
+                _reassertBrightnessOnNextTick = true;
+                ThemeChanged?.Invoke();
+            }
+
+            var verifyBrightness = _tickCount % VerifyIntervalTicks == 0;
+            if (reassertBrightness
+                || _lastAppliedBrightness != brightnessEvaluation.Brightness
+                || (verifyBrightness && !IsBrightnessInSync(brightnessEvaluation.Brightness)))
             {
                 if (!BrightnessController.TrySetBrightness(brightnessEvaluation.Brightness, out var error))
                 {
@@ -215,7 +258,7 @@ internal sealed class AutomationController
             Phase: null,
             NextChange: null,
             ThemeLabel: GetCurrentThemeLabel(),
-            ScheduleSource: _settings.UseSunSchedule ? "Sunrise and sunset" : "Manual schedule",
+            ScheduleSource: _settings.UseSunSchedule ? SunScheduleSource : ManualScheduleSource,
             StatusSummary: "Starting automation...",
             StatusDetail: "Loading settings and preparing the tray controller.",
             LocationLabel: BuildLocationLabel(),
@@ -228,7 +271,7 @@ internal sealed class AutomationController
             NextChange: CurrentStatus.NextChange,
             ThemeLabel: CurrentStatus.ThemeLabel,
             ScheduleSource: _settings.Enabled
-                ? (_settings.UseSunSchedule ? "Sunrise and sunset" : "Manual schedule")
+                ? (_settings.UseSunSchedule ? SunScheduleSource : ManualScheduleSource)
                 : "Automation off",
             StatusSummary: CurrentStatus.StatusSummary,
             StatusDetail: CurrentStatus.StatusDetail,
@@ -269,7 +312,8 @@ internal sealed class AutomationController
                 _settings.LastLongitude.Value,
                 _settings.LastCity ?? string.Empty,
                 _settings.LastCountry ?? string.Empty,
-                "Last known");
+                LastKnownLocationSource);
+            _lastResolvedLocationAtUtc = DateTime.UtcNow;
             return _lastLocation;
         }
 
@@ -290,10 +334,19 @@ internal sealed class AutomationController
     {
         if (_cachedSunTimes != null &&
             _cachedSunDate.Date == DateTime.Today &&
-            _cachedLat == location.Latitude &&
-            _cachedLon == location.Longitude)
+            _cachedLat is { } cachedLat && _cachedLon is { } cachedLon &&
+            Math.Abs(cachedLat - location.Latitude) <= CoordinateTolerance &&
+            Math.Abs(cachedLon - location.Longitude) <= CoordinateTolerance)
         {
+            _usingStaleSunTimes = false;
             return _cachedSunTimes;
+        }
+
+        // Back off after a failed request instead of asking again on every tick.
+        if (DateTime.UtcNow < _sunTimesRetryAfterUtc)
+        {
+            _usingStaleSunTimes = _lastKnownSunTimes != null;
+            return _lastKnownSunTimes;
         }
 
         var sunTimes = await SunService.TryGetSunTimesAsync(location.Latitude, location.Longitude, DateTime.Today);
@@ -303,10 +356,16 @@ internal sealed class AutomationController
             _cachedSunDate = DateTime.Today;
             _cachedLat = location.Latitude;
             _cachedLon = location.Longitude;
+            _lastKnownSunTimes = sunTimes;
+            _sunTimesRetryAfterUtc = DateTime.MinValue;
+            _usingStaleSunTimes = false;
             return sunTimes;
         }
 
-        if (showMessages)
+        _sunTimesRetryAfterUtc = DateTime.UtcNow.Add(SunTimesRetryInterval);
+        _usingStaleSunTimes = _lastKnownSunTimes != null;
+
+        if (showMessages && _lastKnownSunTimes == null)
         {
             ShowMessage(
                 owner,
@@ -316,7 +375,9 @@ internal sealed class AutomationController
                 MessageBoxIcon.Warning);
         }
 
-        return null;
+        // The last successful sun times are far closer to the truth than the manual day/night window,
+        // so a single failed request no longer flips the whole schedule.
+        return _lastKnownSunTimes;
     }
 
     private void RememberLocation(LocationResult location)
@@ -343,12 +404,26 @@ internal sealed class AutomationController
         _cachedSunDate = DateTime.MinValue;
         _cachedLat = null;
         _cachedLon = null;
+        _lastKnownSunTimes = null;
+        _sunTimesRetryAfterUtc = DateTime.MinValue;
+        _usingStaleSunTimes = false;
     }
 
-    private bool CanReuseResolvedLocation() =>
-        _lastLocation != null &&
-        !string.Equals(_lastLocation.Source, "Last known", StringComparison.Ordinal) &&
-        DateTime.UtcNow - _lastResolvedLocationAtUtc < LocationRefreshInterval;
+    private bool CanReuseResolvedLocation()
+    {
+        if (_lastLocation == null)
+        {
+            return false;
+        }
+
+        // A last known location stays usable much longer than an IP lookup; without this the app
+        // would re-resolve the location on every tick once the IP providers fail.
+        var ttl = string.Equals(_lastLocation.Source, LastKnownLocationSource, StringComparison.Ordinal)
+            ? LastKnownLocationTtl
+            : LocationRefreshInterval;
+
+        return DateTime.UtcNow - _lastResolvedLocationAtUtc < ttl;
+    }
 
     private SunTimes? GetCachedSunTimesForPreview() =>
         _settings.UseSunSchedule &&
@@ -376,7 +451,7 @@ internal sealed class AutomationController
                 _settings.LastCountry,
                 _settings.LastLatitude.Value,
                 _settings.LastLongitude.Value,
-                "Last known");
+                LastKnownLocationSource);
         }
 
         return "No location yet. Add a city or allow geolocation to unlock sunrise and sunset mode.";
@@ -496,7 +571,28 @@ internal sealed class AutomationController
         MessageBox.Show(text, caption, buttons, icon);
     }
 
+    internal static AppSettings PreserveLastKnownLocation(AppSettings incoming, AppSettings existing)
+    {
+        incoming.LastLatitude ??= existing.LastLatitude;
+        incoming.LastLongitude ??= existing.LastLongitude;
+        incoming.LastCity ??= existing.LastCity;
+        incoming.LastCountry ??= existing.LastCountry;
+        return incoming;
+    }
+
     private static int ClampTransitionMinutes(int value) => Math.Clamp(value, MinTransitionMinutes, MaxTransitionMinutes);
 
     private static int Clamp(int value) => Math.Clamp(value, 0, 100);
+
+    private static bool IsBrightnessInSync(int expected)
+    {
+        // Without a readable value there is nothing to compare against, so the app keeps the plain
+        // change-based behaviour instead of writing on every tick.
+        if (!BrightnessController.TryGetBrightness(out var actual, out _))
+        {
+            return true;
+        }
+
+        return Math.Abs(actual - expected) <= BrightnessTolerancePercent;
+    }
 }

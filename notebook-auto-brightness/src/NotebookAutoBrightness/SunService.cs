@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -32,18 +33,23 @@ public static class SunService
                 return null;
             }
 
-            if (!DateTime.TryParse(data.Results?.Sunrise, out var sunriseUtc) ||
-                !DateTime.TryParse(data.Results?.Sunset, out var sunsetUtc))
-            {
-                return null;
-            }
-
-            return new SunTimes(sunriseUtc.ToLocalTime(), sunsetUtc.ToLocalTime());
+            return TryParseTimes(data.Results?.Sunrise, data.Results?.Sunset);
         }
         catch
         {
             return null;
         }
+    }
+
+    internal static SunTimes? TryParseTimes(string? sunrise, string? sunset)
+    {
+        if (!DateTimeOffset.TryParse(sunrise, CultureInfo.InvariantCulture, DateTimeStyles.None, out var sunriseOffset) ||
+            !DateTimeOffset.TryParse(sunset, CultureInfo.InvariantCulture, DateTimeStyles.None, out var sunsetOffset))
+        {
+            return null;
+        }
+
+        return new SunTimes(sunriseOffset.LocalDateTime, sunsetOffset.LocalDateTime);
     }
 
     private sealed class SunApiResponse

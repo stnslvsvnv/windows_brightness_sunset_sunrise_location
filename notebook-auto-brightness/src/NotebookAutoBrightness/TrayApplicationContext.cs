@@ -17,6 +17,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _exitItem;
     private readonly Timer _startupTimer;
     private readonly Timer _automationTimer;
+    private readonly Timer _reapplyTimer;
     private readonly bool _showSettingsOnStart;
 
     private ThemePalette _palette = ThemeManager.CreatePalette();
@@ -29,6 +30,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _controller = new AutomationController(Application.ExecutablePath);
         _controller.StatusChanged += HandleStatusChanged;
         _controller.SettingsChanged += HandleSettingsChanged;
+        _controller.ThemeChanged += HandleThemeChanged;
 
         _trayMenu = new ContextMenuStrip();
         _openSettingsItem = new ToolStripMenuItem("Open settings", null, (_, _) => ShowSettingsWindow());
@@ -56,6 +58,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _automationTimer = new Timer { Interval = 15_000 };
         _automationTimer.Tick += async (_, _) => await _controller.ApplyScheduleAsync(false);
+
+        _reapplyTimer = new Timer { Interval = 2_000 };
+        _reapplyTimer.Tick += async (_, _) =>
+        {
+            _reapplyTimer.Stop();
+            await _controller.ApplyScheduleAsync(false, forceBrightness: true);
+        };
 
         _startupTimer = new Timer { Interval = 1 };
         _startupTimer.Tick += async (_, _) => await FinishStartupAsync();
@@ -115,10 +124,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void HandleStatusChanged(AutomationStatus status)
     {
         var tooltip = status.Brightness.HasValue && status.Phase.HasValue
-            ? $"{AppRuntime.AppName} | {ScheduleCalculator.GetPhaseLabel(status.Phase.Value)} | {status.Brightness.Value}%"
+            ? $"{AppRuntime.AppName} | {ScheduleCalculator.GetPhaseLabel(status.Phase.Value)} | {status.Brightness.Value}%{BuildSourceSuffix(status.ScheduleSource)}"
             : $"{AppRuntime.AppName} | {status.StatusSummary}";
         _trayIcon.Text = TruncateTooltip(tooltip);
     }
+
+    private void HandleThemeChanged()
+    {
+        // The theme broadcast makes the display stack re-apply its own brightness a moment later,
+        // so give it a beat and then write our value again.
+        _reapplyTimer.Stop();
+        _reapplyTimer.Start();
+    }
+
+    private static string BuildSourceSuffix(string scheduleSource) =>
+        scheduleSource switch
+        {
+            AutomationController.SunScheduleSource => string.Empty,
+            AutomationController.SunScheduleSourceCached => " | cached",
+            _ => " | manual"
+        };
 
     private void HandleSettingsChanged()
     {
@@ -148,6 +173,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _disposed = true;
         _startupTimer.Stop();
         _automationTimer.Stop();
+        _reapplyTimer.Stop();
 
         if (_settingsForm != null && !_settingsForm.IsDisposed)
         {
@@ -158,9 +184,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _trayIcon.Visible = false;
         _controller.StatusChanged -= HandleStatusChanged;
         _controller.SettingsChanged -= HandleSettingsChanged;
+        _controller.ThemeChanged -= HandleThemeChanged;
         SystemEvents.UserPreferenceChanged -= HandleUserPreferenceChanged;
         _startupTimer.Dispose();
         _automationTimer.Dispose();
+        _reapplyTimer.Dispose();
         _trayIcon.Dispose();
         _openSettingsItem.Dispose();
         _applyNowItem.Dispose();
