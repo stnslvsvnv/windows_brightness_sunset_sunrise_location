@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -12,419 +11,258 @@ namespace NotebookAutoBrightnessInstaller;
 
 public sealed class InstallerForm : Form
 {
-    private readonly Font _heroTitleFont = new("Segoe UI Semibold", 16F, FontStyle.Regular, GraphicsUnit.Point);
-    private readonly Font _heroSubtitleFont = new("Segoe UI", 8.5F, FontStyle.Regular, GraphicsUnit.Point);
-    private readonly Font _sectionKickerFont = new("Segoe UI Semibold", 8F, FontStyle.Regular, GraphicsUnit.Point);
-    private readonly Font _sectionTitleFont = new("Segoe UI Semibold", 12.25F, FontStyle.Regular, GraphicsUnit.Point);
-    private readonly Font _sectionSubtitleFont = new("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point);
-    private readonly Font _bodyFont = new("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point);
-    private readonly Font _inputCaptionFont = new("Segoe UI Semibold", 8F, FontStyle.Regular, GraphicsUnit.Point);
-
-    private readonly Label _heroTitleLabel;
-    private readonly Label _heroSubtitleLabel;
-    private readonly Label _heroStateLabel;
-    private readonly Label _pathPreviewLabel;
-    private readonly Label _statusLabel;
-    private readonly Label _noteLabel;
     private readonly TextBox _installPathBox;
-    private readonly ThemedButton _browseButton;
-    private readonly ThemedButton _installButton;
-    private readonly ThemedButton _uninstallButton;
-    private readonly SettingToggleRow _launchToggle;
-    private readonly SettingToggleRow _autoStartToggle;
+    private readonly CheckBox _launchCheck;
+    private readonly CheckBox _autoStartCheck;
+    private readonly Label _installedStateLabel;
+    private readonly Label _statusLabel;
+    private readonly Label _statusDetailLabel;
     private readonly ProgressBar _progressBar;
+    private readonly Button _browseButton;
+    private readonly Button _installButton;
+    private readonly Button _uninstallButton;
 
     private ThemePalette _palette = ThemeManager.CreatePalette();
 
     public InstallerForm()
     {
         Text = InstallerOperations.AppDisplayName + " Setup";
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        StartPosition = FormStartPosition.CenterScreen;
+        ClientSize = new Size(720, 500);
         MaximizeBox = false;
         MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(720, 420);
-        DoubleBuffered = true;
-
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-
+        ShowInTaskbar = true;
         Icon = LoadAppIcon();
-
-        _heroTitleLabel = CreateLabel("Notebook Auto Brightness", "HeroTitle", _heroTitleFont, autoSize: true);
-        _heroSubtitleLabel = CreateLabel("Minimal setup for daylight-driven brightness and theme automation.", "HeroSubtitle", _heroSubtitleFont, autoSize: true);
-        _heroStateLabel = CreateLabel("Ready to install", "HeroBody", _bodyFont, autoSize: true);
-        _heroStateLabel.MaximumSize = new Size(190, 0);
-        _pathPreviewLabel = CreateLabel(string.Empty, "HeroBody", _bodyFont, autoSize: true);
-        _pathPreviewLabel.MaximumSize = new Size(320, 0);
 
         _installPathBox = new TextBox
         {
-            Dock = DockStyle.Top,
-            ReadOnly = true,
-            Height = 36,
-            Font = _bodyFont
+            Width = 410,
+            ReadOnly = true
         };
 
-        _browseButton = new ThemedButton
+        _launchCheck = new CheckBox
         {
-            Text = "Change path",
-            VisualKind = ButtonVisualKind.Secondary,
-            Width = 138
+            Text = "Launch app after install",
+            AutoSize = true,
+            Checked = true
         };
 
-        _installButton = new ThemedButton
+        _autoStartCheck = new CheckBox
         {
-            Text = "Install",
-            VisualKind = ButtonVisualKind.Primary,
-            Width = 150
+            Text = "Start with Windows in background",
+            AutoSize = true,
+            Checked = true
         };
 
-        _uninstallButton = new ThemedButton
+        _installedStateLabel = new Label
         {
-            Text = "Uninstall",
-            VisualKind = ButtonVisualKind.Secondary,
-            Width = 150
+            AutoSize = false,
+            Width = 620,
+            Height = 44
         };
 
-        _launchToggle = CreateToggle("Launch after install", "Open the app immediately when setup finishes.");
-        _launchToggle.Checked = true;
+        _statusLabel = new Label
+        {
+            AutoSize = true,
+            Font = new Font(Font, FontStyle.Bold)
+        };
 
-        _autoStartToggle = CreateToggle("Start with Windows", "Write the autorun entry during installation.");
-        _autoStartToggle.Checked = true;
+        _statusDetailLabel = new Label
+        {
+            AutoSize = false,
+            Width = 520,
+            Height = 40
+        };
 
         _progressBar = new ProgressBar
         {
-            Dock = DockStyle.Top,
-            Height = 16,
+            Width = 620,
+            Height = 18,
             Style = ProgressBarStyle.Continuous
         };
 
-        _statusLabel = CreateLabel("Ready.", "BodyPrimary", new Font("Segoe UI Semibold", 10F, FontStyle.Regular, GraphicsUnit.Point), autoSize: true);
-        _noteLabel = CreateLabel("You can also uninstall an existing copy from here.", "BodySecondary", _bodyFont, autoSize: true);
-        _noteLabel.MaximumSize = new Size(220, 0);
+        _browseButton = new Button
+        {
+            Text = "Change path",
+            Width = 128,
+            Tag = "SecondaryButton"
+        };
+
+        _installButton = new Button
+        {
+            Text = "Install",
+            Width = 128
+        };
+
+        _uninstallButton = new Button
+        {
+            Text = "Uninstall",
+            Width = 128,
+            Tag = "SecondaryButton"
+        };
 
         Controls.Add(BuildLayout());
 
-        _installButton.Click += async (_, _) => await RunInstallAsync();
-        _uninstallButton.Click += (_, _) => InstallerOperations.UninstallInteractive();
         _browseButton.Click += (_, _) => ChooseInstallPath();
+        _installButton.Click += async (_, _) => await RunInstallAsync();
+        _uninstallButton.Click += (_, _) =>
+        {
+            InstallerOperations.UninstallInteractive();
+            InitializeState();
+        };
+
         Load += (_, _) => InitializeState();
-
-        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        SystemEvents.UserPreferenceChanged += HandleUserPreferenceChanged;
         ApplyCurrentTheme();
-    }
-
-    protected override void OnPaintBackground(PaintEventArgs e)
-    {
-        using var backgroundBrush = new LinearGradientBrush(ClientRectangle, _palette.WindowBackground, _palette.WindowBackgroundAlt, 90f);
-        e.Graphics.FillRectangle(backgroundBrush, ClientRectangle);
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            SystemEvents.UserPreferenceChanged -= HandleUserPreferenceChanged;
         }
 
         base.Dispose(disposing);
     }
 
-    private TableLayoutPanel BuildLayout()
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        ApplyCurrentTheme();
+    }
+
+    private Control BuildLayout()
     {
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(20, 18, 20, 18),
+            Padding = new Padding(12),
             ColumnCount = 1,
-            RowCount = 2,
-            BackColor = Color.Transparent
+            RowCount = 5
         };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        var header = BuildHeaderStrip();
-        header.Margin = new Padding(0, 0, 0, 14);
+        var noteLabel = new Label
+        {
+            AutoSize = false,
+            Width = 680,
+            Height = 40,
+            Text = "Same lightweight tray app, same settings style. Install once, then let it run in the background."
+        };
 
-        root.Controls.Add(header, 0, 0);
-        root.Controls.Add(BuildContentSurface(), 0, 1);
+        root.Controls.Add(noteLabel, 0, 0);
+        root.Controls.Add(BuildOverviewGroup(), 0, 1);
+        root.Controls.Add(BuildDestinationGroup(), 0, 2);
+        root.Controls.Add(BuildOptionsGroup(), 0, 3);
+        root.Controls.Add(BuildActionsGroup(), 0, 4);
 
         return root;
     }
 
-    private Control BuildHeaderStrip()
+    private Control BuildOverviewGroup()
     {
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
-            RowCount = 1,
-            BackColor = Color.Transparent
-        };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-
-        var leftStack = new TableLayoutPanel
+        var panel = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            BackColor = Color.Transparent
-        };
-        leftStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        leftStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        leftStack.Controls.Add(_heroTitleLabel, 0, 0);
-        leftStack.Controls.Add(_heroSubtitleLabel, 0, 1);
-
-        var rightStack = new TableLayoutPanel
-        {
-            Dock = DockStyle.Right,
             AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
-            RowCount = 2,
-            BackColor = Color.Transparent,
-            Margin = new Padding(0)
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false
         };
-        rightStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        rightStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        rightStack.Controls.Add(CreateLabel("STATE", "HeroMetricCaption", _sectionKickerFont, autoSize: true));
-        rightStack.Controls.Add(_heroStateLabel);
 
-        layout.Controls.Add(leftStack, 0, 0);
-        layout.Controls.Add(rightStack, 1, 0);
-        return layout;
+        panel.Controls.Add(_installedStateLabel);
+        return WrapGroup("Overview", panel);
     }
 
-    private ThemedCardPanel BuildContentSurface()
+    private Control BuildDestinationGroup()
     {
-        var card = new ThemedCardPanel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(0),
-            Margin = new Padding(0)
-        };
-
-        var content = new TableLayoutPanel
+        var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
-            RowCount = 1,
-            BackColor = Color.Transparent
+            AutoSize = true
         };
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58F));
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 1F));
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42F));
-        content.Controls.Add(BuildDestinationPane(), 0, 0);
-        content.Controls.Add(CreateVerticalDivider(), 1, 0);
-        content.Controls.Add(BuildActionPane(), 2, 0);
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 430F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-        card.Controls.Add(content);
-        return card;
+        var caption = new Label
+        {
+            Text = "Install path",
+            AutoSize = true
+        };
+
+        layout.Controls.Add(caption, 0, 0);
+        layout.Controls.Add(_installPathBox, 1, 0);
+        layout.Controls.Add(_browseButton, 2, 0);
+
+        return WrapGroup("Destination", layout);
     }
 
-    private Control BuildDestinationPane()
+    private Control BuildOptionsGroup()
+    {
+        var panel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false
+        };
+
+        panel.Controls.Add(_launchCheck);
+        panel.Controls.Add(_autoStartCheck);
+        return WrapGroup("Options", panel);
+    }
+
+    private Control BuildActionsGroup()
     {
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
-            BackColor = Color.Transparent
-        };
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 1F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
-
-        var header = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 1,
-            RowCount = 3,
-            AutoSize = true,
-            BackColor = Color.Transparent,
-            Padding = new Padding(18, 18, 18, 0)
-        };
-        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        header.Controls.Add(CreateLabel("Destination", "SectionTitle", _sectionTitleFont, autoSize: true), 0, 0);
-        var subtitle = CreateLabel("Choose where the app lives and how it behaves after install.", "SectionSubtitle", _sectionSubtitleFont, autoSize: true);
-        subtitle.MaximumSize = new Size(300, 0);
-        header.Controls.Add(subtitle, 0, 1);
-        _pathPreviewLabel.Margin = new Padding(0, 8, 0, 0);
-        header.Controls.Add(_pathPreviewLabel, 0, 2);
-
-        var pathPanel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 2,
-            RowCount = 2,
-            AutoSize = true,
-            BackColor = Color.Transparent,
-            Padding = new Padding(18, 10, 18, 8),
-            Margin = new Padding(0)
-        };
-        pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        pathPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        pathPanel.Controls.Add(CreateLabel("INSTALL PATH", "InputCaption", _inputCaptionFont, autoSize: true), 0, 0);
-        pathPanel.SetColumnSpan(pathPanel.Controls[0], 2);
-        pathPanel.Controls.Add(_installPathBox, 0, 1);
-        pathPanel.Controls.Add(_browseButton, 1, 1);
-
-        _launchToggle.Dock = DockStyle.Fill;
-        _autoStartToggle.Dock = DockStyle.Fill;
-
-        layout.Controls.Add(header, 0, 0);
-        layout.Controls.Add(pathPanel, 0, 1);
-        layout.Controls.Add(CreateFillDivider(), 0, 2);
-        layout.Controls.Add(_launchToggle, 0, 3);
-        layout.Controls.Add(_autoStartToggle, 0, 4);
-
-        return layout;
-    }
-
-    private Control BuildActionPane()
-    {
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 5,
-            BackColor = Color.Transparent,
-            Padding = new Padding(18, 18, 18, 18)
+            RowCount = 4,
+            AutoSize = true
         };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-        var header = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 1,
-            RowCount = 2,
-            AutoSize = true,
-            BackColor = Color.Transparent
-        };
-        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        header.Controls.Add(CreateLabel("Setup", "SectionTitle", _sectionTitleFont, autoSize: true), 0, 0);
-        var subtitle = CreateLabel("Install, replace or remove the current build from one place.", "SectionSubtitle", _sectionSubtitleFont, autoSize: true);
-        subtitle.MaximumSize = new Size(220, 0);
-        header.Controls.Add(subtitle, 0, 1);
-
-        var statusStack = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 1,
-            RowCount = 3,
-            AutoSize = true,
-            BackColor = Color.Transparent,
-            Margin = new Padding(0, 12, 0, 0)
-        };
-        statusStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        statusStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        statusStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        statusStack.Controls.Add(_progressBar, 0, 0);
-        statusStack.Controls.Add(_statusLabel, 0, 1);
-        statusStack.Controls.Add(_noteLabel, 0, 2);
 
         var buttonRow = new FlowLayoutPanel
         {
-            Dock = DockStyle.Right,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            Dock = DockStyle.Fill,
             AutoSize = true,
-            BackColor = Color.Transparent,
-            Margin = new Padding(0)
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false
         };
         buttonRow.Controls.Add(_installButton);
         buttonRow.Controls.Add(_uninstallButton);
 
-        layout.Controls.Add(header, 0, 0);
-        layout.Controls.Add(statusStack, 0, 1);
-        layout.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent }, 0, 3);
-        layout.Controls.Add(buttonRow, 0, 4);
+        layout.Controls.Add(_progressBar, 0, 0);
+        layout.Controls.Add(_statusLabel, 0, 1);
+        layout.Controls.Add(_statusDetailLabel, 0, 2);
+        layout.Controls.Add(buttonRow, 0, 3);
 
-        return layout;
-    }
-
-    private Control CreateFillDivider() =>
-        new Label
-        {
-            Tag = "Divider",
-            Dock = DockStyle.Fill,
-            Height = 1,
-            Margin = new Padding(0),
-            AutoSize = false
-        };
-
-    private Control CreateVerticalDivider() =>
-        new Label
-        {
-            Tag = "Divider",
-            Dock = DockStyle.Fill,
-            Width = 1,
-            Margin = new Padding(0),
-            AutoSize = false
-        };
-
-    private ThemedCardPanel CreateSectionCard(string kicker, string title, string subtitle, Control content)
-    {
-        var card = new ThemedCardPanel
-        {
-            Tone = SurfaceTone.Standard,
-            Dock = DockStyle.Fill
-        };
-
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            BackColor = Color.Transparent
-        };
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-        var header = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 1,
-            RowCount = 3,
-            AutoSize = true,
-            BackColor = Color.Transparent
-        };
-        header.Controls.Add(CreateLabel(kicker, "SectionKicker", _sectionKickerFont, autoSize: true), 0, 0);
-        header.Controls.Add(CreateLabel(title, "SectionTitle", _sectionTitleFont, autoSize: true), 0, 1);
-        header.Controls.Add(CreateLabel(subtitle, "SectionSubtitle", _sectionSubtitleFont, autoSize: true), 0, 2);
-
-        content.Dock = DockStyle.Fill;
-        content.Margin = new Padding(0, 12, 0, 0);
-
-        layout.Controls.Add(header, 0, 0);
-        layout.Controls.Add(content, 0, 1);
-        card.Controls.Add(layout);
-        return card;
+        return WrapGroup("Setup", layout);
     }
 
     private void InitializeState()
     {
         _installPathBox.Text = InstallerOperations.GetInstallLocation() ?? InstallerOperations.DefaultInstallDir;
-        _pathPreviewLabel.Text = _installPathBox.Text;
 
         var installed = InstallerOperations.IsInstalled();
-        _heroStateLabel.Text = installed ? "Installed build detected" : "Ready to install";
-        _statusLabel.Text = installed ? "Existing installation found." : "No installation found yet.";
-        _noteLabel.Text = installed
-            ? "You can reinstall in place or remove the current version."
-            : "Install once, then manage everything from the tray app.";
+        _installedStateLabel.Text = installed
+            ? "Installed build detected. You can reinstall over it or remove it from here."
+            : "No installation found yet. Choose a path and install the tray app.";
+        _statusLabel.Text = installed ? "Ready to update or uninstall." : "Ready to install.";
+        _statusDetailLabel.Text = installed
+            ? "Existing files were detected in the install location."
+            : "The installer will copy the app and optional autorun configuration.";
         _uninstallButton.Enabled = installed;
     }
 
@@ -439,44 +277,41 @@ public sealed class InstallerForm : Form
         if (dialog.ShowDialog(this) == DialogResult.OK && Directory.Exists(dialog.SelectedPath))
         {
             _installPathBox.Text = dialog.SelectedPath;
-            _pathPreviewLabel.Text = dialog.SelectedPath;
         }
     }
 
     private async Task RunInstallAsync()
     {
-        SetBusyState(true, "Installing...", "Copying files and preparing autorun settings.");
+        SetBusyState(true, "Installing...", "Copying files and preparing background autorun settings.");
         var installDir = _installPathBox.Text.Trim();
 
         try
         {
-            var appPath = await Task.Run(() => InstallerOperations.Install(installDir, true, _autoStartToggle.Checked));
-            _statusLabel.Text = "Installation complete.";
-            _noteLabel.Text = "The app is ready. You can launch it now or find it later in the install folder.";
-            _progressBar.Style = ProgressBarStyle.Continuous;
+            var appPath = await Task.Run(() => InstallerOperations.Install(installDir, true, _autoStartCheck.Checked));
             InitializeState();
+            _statusLabel.Text = "Installation complete.";
+            _statusDetailLabel.Text = "The tray app is ready. It can start immediately or stay dormant until sign-in.";
+            _progressBar.Style = ProgressBarStyle.Continuous;
 
-            var launch = false;
-            if (_launchToggle.Checked)
+            if (_launchCheck.Checked && File.Exists(appPath))
             {
                 var result = MessageBox.Show(
                     this,
-                    "Everything is ready. Launch now?",
+                    "Everything is ready. Launch the app now?",
                     InstallerOperations.AppDisplayName,
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Question);
-                launch = result == DialogResult.Yes;
-            }
 
-            if (launch && File.Exists(appPath))
-            {
-                Process.Start(new ProcessStartInfo(appPath) { UseShellExecute = true });
+                if (result == DialogResult.Yes)
+                {
+                    Process.Start(new ProcessStartInfo(appPath) { UseShellExecute = true });
+                }
             }
         }
         catch (Exception ex)
         {
             _statusLabel.Text = "Installation failed.";
-            _noteLabel.Text = "Setup could not finish. Check the error details and try again.";
+            _statusDetailLabel.Text = "Setup could not finish. Check the error details and try again.";
             MessageBox.Show(
                 this,
                 $"Installation failed.\n\n{ex.Message}",
@@ -486,20 +321,20 @@ public sealed class InstallerForm : Form
         }
         finally
         {
-            SetBusyState(false, _statusLabel.Text, _noteLabel.Text);
+            SetBusyState(false, _statusLabel.Text, _statusDetailLabel.Text);
             InitializeState();
         }
     }
 
-    private void SetBusyState(bool busy, string status, string note)
+    private void SetBusyState(bool busy, string status, string detail)
     {
+        _browseButton.Enabled = !busy;
         _installButton.Enabled = !busy;
         _uninstallButton.Enabled = !busy && InstallerOperations.IsInstalled();
-        _browseButton.Enabled = !busy;
-        _launchToggle.Enabled = !busy;
-        _autoStartToggle.Enabled = !busy;
+        _launchCheck.Enabled = !busy;
+        _autoStartCheck.Enabled = !busy;
         _statusLabel.Text = status;
-        _noteLabel.Text = note;
+        _statusDetailLabel.Text = detail;
         _progressBar.Style = busy ? ProgressBarStyle.Marquee : ProgressBarStyle.Continuous;
     }
 
@@ -507,59 +342,12 @@ public sealed class InstallerForm : Form
     {
         _palette = ThemeManager.CreatePalette();
         ThemeManager.ApplyTheme(this, _palette);
-        ApplyLabelTheme(this);
+        _installedStateLabel.ForeColor = _palette.TextSecondary;
+        _statusDetailLabel.ForeColor = _palette.TextSecondary;
         Invalidate(true);
     }
 
-    private void ApplyLabelTheme(Control root)
-    {
-        if (root is Label label)
-        {
-            switch (label.Tag as string)
-            {
-                case "HeroTitle":
-                    label.ForeColor = _palette.TextPrimary;
-                    break;
-                case "HeroSubtitle":
-                    label.ForeColor = _palette.TextSecondary;
-                    break;
-                case "HeroBody":
-                    label.ForeColor = _palette.TextPrimary;
-                    break;
-                case "HeroMetricCaption":
-                    label.ForeColor = _palette.TextMuted;
-                    break;
-                case "SectionKicker":
-                    label.ForeColor = _palette.AccentStrong;
-                    break;
-                case "SectionTitle":
-                    label.ForeColor = _palette.TextPrimary;
-                    break;
-                case "SectionSubtitle":
-                    label.ForeColor = _palette.TextSecondary;
-                    break;
-                case "InputCaption":
-                    label.ForeColor = _palette.TextMuted;
-                    break;
-                case "Divider":
-                    label.BackColor = Color.FromArgb(_palette.Mode == AppColorMode.Dark ? 44 : 224, _palette.Border);
-                    break;
-                case "BodyPrimary":
-                    label.ForeColor = _palette.TextPrimary;
-                    break;
-                case "BodySecondary":
-                    label.ForeColor = _palette.TextSecondary;
-                    break;
-            }
-        }
-
-        foreach (Control child in root.Controls)
-        {
-            ApplyLabelTheme(child);
-        }
-    }
-
-    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    private void HandleUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {
         if (!ThemeManager.IsThemeRelatedChange(e.Category) || IsDisposed)
         {
@@ -568,31 +356,26 @@ public sealed class InstallerForm : Form
 
         if (InvokeRequired)
         {
-            BeginInvoke((Action)ApplyCurrentTheme);
+            BeginInvoke(new Action(ApplyCurrentTheme));
             return;
         }
 
         ApplyCurrentTheme();
     }
 
-    private SettingToggleRow CreateToggle(string text, string description) =>
-        new()
+    private static GroupBox WrapGroup(string text, Control control)
+    {
+        var group = new GroupBox
         {
             Text = text,
-            Description = description,
-            Margin = new Padding(0)
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            Padding = new Padding(10)
         };
-
-    private Label CreateLabel(string text, string tag, Font font, bool autoSize) =>
-        new()
-        {
-            Text = text,
-            Tag = tag,
-            Font = font,
-            AutoSize = autoSize,
-            BackColor = Color.Transparent,
-            Margin = new Padding(0)
-        };
+        control.Dock = DockStyle.Fill;
+        group.Controls.Add(control);
+        return group;
+    }
 
     private static Icon LoadAppIcon()
     {

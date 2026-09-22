@@ -118,7 +118,7 @@ public static class InstallerOperations
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-            key?.SetValue(AutoRunValueName, $"\"{appPath}\"");
+            key?.SetValue(AutoRunValueName, $"\"{appPath}\" --background");
         }
         catch
         {
