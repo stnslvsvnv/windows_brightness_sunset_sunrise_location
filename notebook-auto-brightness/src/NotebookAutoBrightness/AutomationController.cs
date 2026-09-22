@@ -248,6 +248,7 @@ internal sealed class AutomationController
     {
         _settings = NormalizeSettings(SettingsStore.Load());
         _settings.StartWithWindows = IsAutoStartEnabled();
+        _lastResolvedLocationAtUtc = _settings.LastLocationResolvedAtUtc ?? DateTime.MinValue;
         SettingsStore.Save(_settings);
         SettingsChanged?.Invoke();
     }
@@ -287,6 +288,13 @@ internal sealed class AutomationController
 
         if (_settings.UseGeolocation)
         {
+            var windowsLocation = await WindowsLocationProvider.TryGetLocationAsync();
+            if (windowsLocation != null)
+            {
+                RememberLocation(windowsLocation);
+                return windowsLocation;
+            }
+
             var ipLocation = await GeoService.TryGetIpLocationAsync();
             if (ipLocation != null)
             {
@@ -305,7 +313,11 @@ internal sealed class AutomationController
             }
         }
 
-        if (_settings.LastLatitude.HasValue && _settings.LastLongitude.HasValue)
+        // A stored location is only usable while the machine stays in the same time zone: after a
+        // move the sun times would be computed for the previous place in the new local time.
+        if (_settings.LastLatitude.HasValue &&
+            _settings.LastLongitude.HasValue &&
+            !HasTimeZoneChanged())
         {
             _lastLocation = new LocationResult(
                 _settings.LastLatitude.Value,
@@ -321,7 +333,9 @@ internal sealed class AutomationController
         {
             ShowMessage(
                 owner,
-                "Location is required to calculate sunrise and sunset. Please enter a city.",
+                HasTimeZoneChanged()
+                    ? "The time zone changed, so the last known location is stale. Enter a city to calculate sunrise and sunset."
+                    : "Location is required to calculate sunrise and sunset. Please enter a city.",
                 AppRuntime.AppName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -329,6 +343,10 @@ internal sealed class AutomationController
 
         return null;
     }
+
+    private bool HasTimeZoneChanged() =>
+        !string.IsNullOrEmpty(_settings.LastTimeZoneId) &&
+        !string.Equals(_settings.LastTimeZoneId, TimeZoneInfo.Local.Id, StringComparison.OrdinalIgnoreCase);
 
     private async Task<SunTimes?> GetSunTimesAsync(LocationResult location, bool showMessages, IWin32Window? owner)
     {
@@ -393,6 +411,8 @@ internal sealed class AutomationController
         _settings.LastLongitude = location.Longitude;
         _settings.LastCity = location.City;
         _settings.LastCountry = location.Country;
+        _settings.LastTimeZoneId = TimeZoneInfo.Local.Id;
+        _settings.LastLocationResolvedAtUtc = _lastResolvedLocationAtUtc;
         SettingsStore.Save(_settings);
     }
 
@@ -409,21 +429,42 @@ internal sealed class AutomationController
         _usingStaleSunTimes = false;
     }
 
-    private bool CanReuseResolvedLocation()
+    internal static bool IsLocationReusable(
+        LocationResult? location,
+        DateTime resolvedAtUtc,
+        DateTime nowUtc,
+        string? resolvedTimeZoneId,
+        string currentTimeZoneId)
     {
-        if (_lastLocation == null)
+        if (location == null)
+        {
+            return false;
+        }
+
+        // Resolved in another time zone means another trip: the location is not reused even as a
+        // fallback, otherwise sunrise would be computed for the wrong local day.
+        if (!string.IsNullOrEmpty(resolvedTimeZoneId) &&
+            !string.Equals(resolvedTimeZoneId, currentTimeZoneId, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         // A last known location stays usable much longer than an IP lookup; without this the app
-        // would re-resolve the location on every tick once the IP providers fail.
-        var ttl = string.Equals(_lastLocation.Source, LastKnownLocationSource, StringComparison.Ordinal)
+        // would re-resolve the location on every tick once the automatic sources fail.
+        var ttl = string.Equals(location.Source, LastKnownLocationSource, StringComparison.Ordinal)
             ? LastKnownLocationTtl
             : LocationRefreshInterval;
 
-        return DateTime.UtcNow - _lastResolvedLocationAtUtc < ttl;
+        return nowUtc - resolvedAtUtc < ttl;
     }
+
+    private bool CanReuseResolvedLocation() =>
+        IsLocationReusable(
+            _lastLocation,
+            _lastResolvedLocationAtUtc,
+            DateTime.UtcNow,
+            _settings.LastTimeZoneId,
+            TimeZoneInfo.Local.Id);
 
     private SunTimes? GetCachedSunTimesForPreview() =>
         _settings.UseSunSchedule &&
@@ -451,7 +492,7 @@ internal sealed class AutomationController
                 _settings.LastCountry,
                 _settings.LastLatitude.Value,
                 _settings.LastLongitude.Value,
-                LastKnownLocationSource);
+                $"{LastKnownLocationSource} ({DescribeAge(_settings.LastLocationResolvedAtUtc)})");
         }
 
         return "No location yet. Add a city or allow geolocation to unlock sunrise and sunset mode.";
@@ -461,6 +502,32 @@ internal sealed class AutomationController
         sunTimes != null
             ? $"Sunrise {sunTimes.Sunrise:HH:mm}  |  Sunset {sunTimes.Sunset:HH:mm}"
             : $"Manual window {_settings.DayStartTime:hh\\:mm}  |  Night starts {_settings.NightStartTime:hh\\:mm}";
+
+    private static string DescribeAge(DateTime? resolvedAtUtc)
+    {
+        if (resolvedAtUtc == null)
+        {
+            return "unknown age";
+        }
+
+        var age = DateTime.UtcNow - resolvedAtUtc.Value;
+        if (age < TimeSpan.FromMinutes(1))
+        {
+            return "just now";
+        }
+
+        if (age < TimeSpan.FromHours(1))
+        {
+            return $"{age.TotalMinutes:F0} min ago";
+        }
+
+        if (age < TimeSpan.FromDays(1))
+        {
+            return $"{age.TotalHours:F0} h ago";
+        }
+
+        return $"{age.TotalDays:F0} d ago";
+    }
 
     private static string FormatLocationLabel(string? city, string? country, double latitude, double longitude, string source)
     {
@@ -531,7 +598,9 @@ internal sealed class AutomationController
             LastLatitude = settings.LastLatitude,
             LastLongitude = settings.LastLongitude,
             LastCity = settings.LastCity,
-            LastCountry = settings.LastCountry
+            LastCountry = settings.LastCountry,
+            LastTimeZoneId = settings.LastTimeZoneId,
+            LastLocationResolvedAtUtc = settings.LastLocationResolvedAtUtc
         };
 
     private static AppSettings CloneSettings(AppSettings settings) =>
@@ -552,7 +621,9 @@ internal sealed class AutomationController
             LastLatitude = settings.LastLatitude,
             LastLongitude = settings.LastLongitude,
             LastCity = settings.LastCity,
-            LastCountry = settings.LastCountry
+            LastCountry = settings.LastCountry,
+            LastTimeZoneId = settings.LastTimeZoneId,
+            LastLocationResolvedAtUtc = settings.LastLocationResolvedAtUtc
         };
 
     private static void ShowMessage(
@@ -577,6 +648,8 @@ internal sealed class AutomationController
         incoming.LastLongitude ??= existing.LastLongitude;
         incoming.LastCity ??= existing.LastCity;
         incoming.LastCountry ??= existing.LastCountry;
+        incoming.LastTimeZoneId ??= existing.LastTimeZoneId;
+        incoming.LastLocationResolvedAtUtc ??= existing.LastLocationResolvedAtUtc;
         return incoming;
     }
 

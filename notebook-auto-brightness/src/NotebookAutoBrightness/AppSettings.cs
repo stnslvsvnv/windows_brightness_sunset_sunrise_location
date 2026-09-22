@@ -29,6 +29,12 @@ public sealed class AppSettings
     public double? LastLongitude { get; set; }
     public string? LastCity { get; set; }
     public string? LastCountry { get; set; }
+
+    /// <summary>Time zone the last known location was resolved in; a change means the machine moved.</summary>
+    public string? LastTimeZoneId { get; set; }
+
+    /// <summary>When the last known location was resolved, so it can be aged in the status label.</summary>
+    public DateTime? LastLocationResolvedAtUtc { get; set; }
 }
 
 public sealed class TimeSpanConverter : JsonConverter<TimeSpan>

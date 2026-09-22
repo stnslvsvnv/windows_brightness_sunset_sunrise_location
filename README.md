@@ -17,7 +17,7 @@ It can work by:
   - `0` means instant switch.
 - **Auto-switch Windows theme**: dark theme at night, light theme during the day.
 - Can start with Windows.
-- Can detect location via IP geolocation, with fallback to city and last known location.
+- Can detect location via Windows location services (Wi-Fi/GNSS), IP geolocation, a fallback city and the last known location — in that order, and a location from an earlier time zone is treated as stale after a move.
 
 ## Quick Start (Ready Installer)
 
