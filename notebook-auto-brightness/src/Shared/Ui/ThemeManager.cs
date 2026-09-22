@@ -81,13 +81,33 @@ internal static class ThemeManager
                 form.BackColor = palette.WindowBackground;
                 form.ForeColor = palette.TextPrimary;
                 break;
+            case GroupBox groupBox:
+                groupBox.BackColor = palette.Surface;
+                groupBox.ForeColor = palette.TextPrimary;
+                break;
             case TableLayoutPanel:
             case FlowLayoutPanel:
                 control.BackColor = Color.Transparent;
                 control.ForeColor = palette.TextPrimary;
                 break;
+            case CheckBox checkBox:
+                checkBox.BackColor = Color.Transparent;
+                checkBox.ForeColor = palette.TextPrimary;
+                break;
             case Label label:
                 label.BackColor = Color.Transparent;
+                label.ForeColor = palette.TextPrimary;
+                break;
+            case Button button:
+                var isSecondaryButton = string.Equals(button.Tag as string, "SecondaryButton", StringComparison.Ordinal);
+                button.UseVisualStyleBackColor = false;
+                button.FlatStyle = FlatStyle.Flat;
+                button.FlatAppearance.BorderColor = palette.Border;
+                button.FlatAppearance.BorderSize = 1;
+                button.BackColor = isSecondaryButton ? palette.Surface : palette.Accent;
+                button.ForeColor = isSecondaryButton
+                    ? palette.TextPrimary
+                    : palette.Mode == AppColorMode.Dark ? Color.FromArgb(15, 17, 21) : Color.White;
                 break;
             case TextBox textBox:
                 textBox.BackColor = palette.InputBackground;
@@ -95,11 +115,18 @@ internal static class ThemeManager
                 textBox.BorderStyle = BorderStyle.FixedSingle;
                 break;
             case DateTimePicker picker:
+                picker.BackColor = palette.InputBackground;
+                picker.CalendarMonthBackground = palette.SurfaceRaised;
                 picker.CalendarMonthBackground = palette.SurfaceRaised;
                 picker.CalendarForeColor = palette.TextPrimary;
                 picker.CalendarTitleBackColor = palette.SurfaceMuted;
                 picker.CalendarTitleForeColor = palette.TextPrimary;
                 picker.CalendarTrailingForeColor = palette.TextMuted;
+                picker.ForeColor = palette.TextPrimary;
+                break;
+            case TrackBar trackBar:
+                trackBar.BackColor = palette.Surface;
+                trackBar.ForeColor = palette.TextPrimary;
                 break;
             case ProgressBar progressBar:
                 progressBar.ForeColor = palette.Accent;
