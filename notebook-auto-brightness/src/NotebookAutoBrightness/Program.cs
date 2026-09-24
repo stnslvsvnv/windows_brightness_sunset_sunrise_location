@@ -20,6 +20,16 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
 
+        // Keep a broken UI-thread callback from turning into a modal dialog or a dead tray app:
+        // the exception is logged and the schedule keeps running.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => AppLog.WriteError("ui thread", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => AppLog.WriteError(
+            "unhandled",
+            e.ExceptionObject as Exception ?? new InvalidOperationException("unknown failure"));
+
+        AppLog.Write($"{AppRuntime.AppName} started (pid {Environment.ProcessId})");
+
         var showSettingsOnStart = !args.Any(static arg =>
             string.Equals(arg, AppRuntime.BackgroundArgument, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(arg, "/background", StringComparison.OrdinalIgnoreCase));

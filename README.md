@@ -9,6 +9,7 @@ It can work by:
 ## What It Does
 
 - Runs in tray and applies brightness automatically every 15 seconds.
+- Re-applies the schedule on wake from sleep, session unlock, clock and display changes, and self-heals if a periodic pass was missed or a display wrote something else.
 - Uses separate `Day brightness` and `Night brightness` values.
 - Supports smooth transitions with cosine easing:
   - **Dawn**: gradually increases brightness before sunrise/day start.
@@ -86,3 +87,4 @@ In manual schedule mode:
 - Brightness control uses WMI and depends on hardware/driver support.
 - External monitors may not support this method.
 - Windows theme switching updates both theme registry values and broadcasts the change to running apps.
+- Diagnostics: a small rolling log is kept at `%APPDATA%\NotebookSunriseSunsetAutoBrightness\log.txt` (start-ups, wake-ups, theme switches, errors).

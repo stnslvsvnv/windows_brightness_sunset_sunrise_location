@@ -16,6 +16,8 @@ internal sealed class AutomationController
     internal const string SunScheduleSource = "Sunrise and sunset";
     internal const string SunScheduleSourceCached = "Sunrise and sunset (cached)";
     internal const string ManualScheduleSource = "Manual schedule";
+    internal static readonly TimeSpan ApplyLeaseTimeout = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan ApplyFreshnessLimit = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan LocationRefreshInterval = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan LastKnownLocationTtl = TimeSpan.FromHours(6);
     private static readonly TimeSpan SunTimesRetryInterval = TimeSpan.FromMinutes(10);
@@ -23,7 +25,9 @@ internal sealed class AutomationController
     private readonly string _executablePath;
 
     private AppSettings _settings = new();
-    private bool _isApplying;
+    private DateTime _applyStartedAtUtc = DateTime.MinValue;
+    private DateTime _lastCompletedApplyUtc = DateTime.MinValue;
+    private int _applyLease;
     private int? _lastAppliedBrightness;
     private int _tickCount;
     private bool _reassertBrightnessOnNextTick;
@@ -89,14 +93,23 @@ internal sealed class AutomationController
         UpdateSettings(settings);
     }
 
+    // Called by the host on resume, unlock, clock and display changes: a sun times retry backoff
+    // must not survive a wake-up, and the brightness written before the gap cannot be trusted.
+    public void HandleSystemEvent(string reason)
+    {
+        _sunTimesRetryAfterUtc = DateTime.MinValue;
+        AppLog.Write($"system event: {reason}");
+    }
+
     public async Task<AutomationStatus> ApplyScheduleAsync(bool showMessages, IWin32Window? owner = null, bool forceBrightness = false)
     {
-        if (_isApplying)
+        if (IsApplyLeaseActive(_applyStartedAtUtc, DateTime.UtcNow))
         {
             return CurrentStatus;
         }
 
-        _isApplying = true;
+        var lease = ++_applyLease;
+        _applyStartedAtUtc = DateTime.UtcNow;
         try
         {
             if (!_settings.Enabled)
@@ -113,6 +126,18 @@ internal sealed class AutomationController
                     SunWindowLabel: BuildSunWindowLabel(null));
                 PublishStatus(paused);
                 return paused;
+            }
+
+            var gap = DateTime.UtcNow - _lastCompletedApplyUtc;
+            if (IsScheduleStale(_lastCompletedApplyUtc, DateTime.UtcNow))
+            {
+                // Time was lost: the machine slept, the thread froze or a previous apply wedged.
+                // Whatever was written before the gap cannot be trusted, so write unconditionally.
+                forceBrightness = true;
+                if (_lastCompletedApplyUtc != DateTime.MinValue)
+                {
+                    AppLog.Write($"schedule gap of {gap.TotalMinutes:F1} min, forcing re-apply");
+                }
             }
 
             SunTimes? sunTimes = null;
@@ -183,6 +208,7 @@ internal sealed class AutomationController
                 // the next tick instead of trusting the value that was just set.
                 reassertBrightness = true;
                 _reassertBrightnessOnNextTick = true;
+                AppLog.Write($"theme switched to {themeLabel}");
                 ThemeChanged?.Invoke();
             }
 
@@ -213,6 +239,7 @@ internal sealed class AutomationController
                         StatusDetail: "Your display driver or hardware rejected the change.",
                         LocationLabel: BuildLocationLabel(),
                         SunWindowLabel: BuildSunWindowLabel(sunTimes));
+                    _lastCompletedApplyUtc = DateTime.UtcNow;
                     PublishStatus(failed);
                     return failed;
                 }
@@ -235,12 +262,18 @@ internal sealed class AutomationController
                 StatusDetail: statusDetail,
                 LocationLabel: BuildLocationLabel(),
                 SunWindowLabel: BuildSunWindowLabel(sunTimes));
+            _lastCompletedApplyUtc = DateTime.UtcNow;
             PublishStatus(applied);
             return applied;
         }
         finally
         {
-            _isApplying = false;
+            // Only the owner of the current lease may release it: a wedged apply that times out and
+            // later resumes must not clear the lease of a newer one.
+            if (_applyLease == lease)
+            {
+                _applyStartedAtUtc = DateTime.MinValue;
+            }
         }
     }
 
@@ -542,14 +575,24 @@ internal sealed class AutomationController
 
     private static string GetCurrentThemeLabel()
     {
-        var currentTheme = WindowsThemeController.GetCurrentTheme();
-        return currentTheme switch
+        var apps = WindowsThemeController.GetCurrentTheme();
+        var system = WindowsThemeController.GetSystemTheme();
+        if (apps != null && system != null && apps != system)
+        {
+            // Windows mode can be "Custom" (different app and system modes): report both.
+            return $"apps {DescribeTheme(apps)}, system {DescribeTheme(system)}";
+        }
+
+        return DescribeTheme(apps ?? system);
+    }
+
+    private static string DescribeTheme(WindowsThemeController.ThemeMode? mode) =>
+        mode switch
         {
             WindowsThemeController.ThemeMode.Dark => "Dark",
             WindowsThemeController.ThemeMode.Light => "Light",
             _ => "System"
         };
-    }
 
     private void ApplyAutoStartPreference()
     {
@@ -668,4 +711,10 @@ internal sealed class AutomationController
 
         return Math.Abs(actual - expected) <= BrightnessTolerancePercent;
     }
+
+    internal static bool IsApplyLeaseActive(DateTime applyStartedAtUtc, DateTime nowUtc) =>
+        nowUtc - applyStartedAtUtc < ApplyLeaseTimeout;
+
+    internal static bool IsScheduleStale(DateTime lastCompletedApplyUtc, DateTime nowUtc) =>
+        nowUtc - lastCompletedApplyUtc > ApplyFreshnessLimit;
 }
