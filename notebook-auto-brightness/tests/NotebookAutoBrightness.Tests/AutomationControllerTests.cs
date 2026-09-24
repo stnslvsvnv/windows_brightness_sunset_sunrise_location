@@ -102,4 +102,25 @@ public sealed class AutomationControllerTests
 
         Assert.False(AutomationController.IsLocationReusable(null, now, now, null, "Europe/Berlin"));
     }
+
+    [Fact]
+    public void ApplyLeaseExpiresSoAWedgedApplyCannotStopTheSchedule()
+    {
+        var now = new DateTime(2026, 9, 22, 12, 0, 0, DateTimeKind.Utc);
+
+        Assert.True(AutomationController.IsApplyLeaseActive(now.AddSeconds(-5), now));
+        Assert.False(AutomationController.IsApplyLeaseActive(now.AddSeconds(-45), now));
+        // Nothing has ever run: the lease is free.
+        Assert.False(AutomationController.IsApplyLeaseActive(DateTime.MinValue, now));
+    }
+
+    [Fact]
+    public void LostTimeCountsAsStaleAndForcesAReapply()
+    {
+        var now = new DateTime(2026, 9, 22, 12, 0, 0, DateTimeKind.Utc);
+
+        Assert.False(AutomationController.IsScheduleStale(now.AddSeconds(-30), now));
+        // A night's sleep, a frozen thread or a wedged apply all look like a gap of hours.
+        Assert.True(AutomationController.IsScheduleStale(now.AddHours(-3), now));
+    }
 }

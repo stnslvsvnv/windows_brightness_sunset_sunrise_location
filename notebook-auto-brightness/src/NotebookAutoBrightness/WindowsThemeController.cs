@@ -45,13 +45,21 @@ public static class WindowsThemeController
         }
     }
 
-    // Switches the theme only when it really differs and reports whether a switch (and its
-    // system-wide broadcast) happened. An unreadable registry value is not a reason to broadcast
-    // again: once we have set the theme ourselves, that value is treated as the current one.
+    // Switches the theme only when the system really differs and reports whether a switch (and its
+    // system-wide broadcast) happened. Both registry values are checked: Windows lets the app mode
+    // and the system mode differ ("Custom" mode), so trusting only the apps value would leave the
+    // system theme dark while thinking everything is fine. An unreadable value is still not a
+    // reason to broadcast on every tick - once we set exactly this theme, it counts as applied.
     public static bool EnsureTheme(ThemeMode mode)
     {
-        var current = GetCurrentTheme();
-        if (current == mode || (current == null && _lastAppliedTheme == mode))
+        var apps = GetCurrentTheme();
+        var system = GetSystemTheme();
+        if (apps == mode && system == mode)
+        {
+            return false;
+        }
+
+        if (_lastAppliedTheme == mode && (apps == mode || apps == null))
         {
             return false;
         }
@@ -63,20 +71,18 @@ public static class WindowsThemeController
 
     public static bool SetDarkTheme() => SetTheme(ThemeMode.Dark);
 
-    public static ThemeMode? GetCurrentTheme()
+    public static ThemeMode? GetCurrentTheme() => ReadTheme(AppsUseLightTheme);
+
+    public static ThemeMode? GetSystemTheme() => ReadTheme(SystemUsesLightTheme);
+
+    private static ThemeMode? ReadTheme(string valueName)
     {
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(PersonalizeKey, false);
-            if (key == null)
+            if (key?.GetValue(valueName) is int value)
             {
-                return null;
-            }
-
-            var value = key.GetValue(AppsUseLightTheme);
-            if (value is int intValue)
-            {
-                return (ThemeMode)intValue;
+                return (ThemeMode)value;
             }
 
             return null;

@@ -34,7 +34,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _trayMenu = new ContextMenuStrip();
         _openSettingsItem = new ToolStripMenuItem("Open settings", null, (_, _) => ShowSettingsWindow());
-        _applyNowItem = new ToolStripMenuItem("Apply now", null, async (_, _) => await _controller.ApplyScheduleAsync(true));
+        _applyNowItem = new ToolStripMenuItem("Apply now", null, async (_, _) => await SafeApplyAsync(forceBrightness: true, showMessages: true));
         _toggleAutomationItem = new ToolStripMenuItem("Disable automation", null, async (_, _) => await ToggleAutomationAsync());
         _exitItem = new ToolStripMenuItem("Exit", null, (_, _) => ExitApplication());
 
@@ -57,21 +57,25 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _trayIcon.DoubleClick += (_, _) => ShowSettingsWindow();
 
         _automationTimer = new Timer { Interval = 15_000 };
-        _automationTimer.Tick += async (_, _) => await _controller.ApplyScheduleAsync(false);
+        _automationTimer.Tick += async (_, _) => await SafeApplyAsync(forceBrightness: false);
 
         _reapplyTimer = new Timer { Interval = 2_000 };
         _reapplyTimer.Tick += async (_, _) =>
         {
             _reapplyTimer.Stop();
-            await _controller.ApplyScheduleAsync(false, forceBrightness: true);
+            await SafeApplyAsync(forceBrightness: true);
         };
 
         _startupTimer = new Timer { Interval = 1 };
-        _startupTimer.Tick += async (_, _) => await FinishStartupAsync();
+        _startupTimer.Tick += async (_, _) => await SafeFinishStartupAsync();
         _startupTimer.Start();
 
         UpdateToggleMenuText();
         SystemEvents.UserPreferenceChanged += HandleUserPreferenceChanged;
+        SystemEvents.PowerModeChanged += HandlePowerModeChanged;
+        SystemEvents.SessionSwitch += HandleSessionSwitch;
+        SystemEvents.TimeChanged += HandleTimeChanged;
+        SystemEvents.DisplaySettingsChanged += HandleDisplaySettingsChanged;
         ApplyCurrentTheme();
     }
 
@@ -116,9 +120,82 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private async Task ToggleAutomationAsync()
     {
-        _controller.ToggleEnabled();
-        UpdateToggleMenuText();
-        await _controller.ApplyScheduleAsync(false);
+        try
+        {
+            _controller.ToggleEnabled();
+            UpdateToggleMenuText();
+            await _controller.ApplyScheduleAsync(false);
+        }
+        catch (Exception ex)
+        {
+            AppLog.WriteError("toggle automation", ex);
+        }
+    }
+
+    // Timer ticks and menu clicks are async void: an exception there used to become an unhandled
+    // failure (dialog or dead process), so every entry point goes through a guarded wrapper.
+    private async Task SafeApplyAsync(bool forceBrightness, bool showMessages = false)
+    {
+        try
+        {
+            await _controller.ApplyScheduleAsync(showMessages, owner: null, forceBrightness: forceBrightness);
+        }
+        catch (Exception ex)
+        {
+            AppLog.WriteError("apply schedule", ex);
+        }
+    }
+
+    private async Task SafeFinishStartupAsync()
+    {
+        try
+        {
+            await FinishStartupAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLog.WriteError("startup", ex);
+        }
+    }
+
+    private void HandlePowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume || e.Mode == PowerModes.StatusChange)
+        {
+            RequestImmediateApply($"power {e.Mode}");
+        }
+    }
+
+    private void HandleSessionSwitch(object sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason == SessionSwitchReason.SessionUnlock)
+        {
+            RequestImmediateApply("session unlocked");
+        }
+    }
+
+    private void HandleTimeChanged(object? sender, EventArgs e) => RequestImmediateApply("clock or time zone changed");
+
+    private void HandleDisplaySettingsChanged(object? sender, EventArgs e) => RequestImmediateApply("display settings changed");
+
+    // System events arrive on their own thread and several can fire at once on a wake-up, so the
+    // work is marshalled to the UI thread and coalesced through the existing one-shot timer.
+    private void RequestImmediateApply(string reason)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (_trayMenu.InvokeRequired)
+        {
+            _trayMenu.BeginInvoke(new Action(() => RequestImmediateApply(reason)));
+            return;
+        }
+
+        _controller.HandleSystemEvent(reason);
+        _reapplyTimer.Stop();
+        _reapplyTimer.Start();
     }
 
     private void HandleStatusChanged(AutomationStatus status)
@@ -186,6 +263,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _controller.SettingsChanged -= HandleSettingsChanged;
         _controller.ThemeChanged -= HandleThemeChanged;
         SystemEvents.UserPreferenceChanged -= HandleUserPreferenceChanged;
+        SystemEvents.PowerModeChanged -= HandlePowerModeChanged;
+        SystemEvents.SessionSwitch -= HandleSessionSwitch;
+        SystemEvents.TimeChanged -= HandleTimeChanged;
+        SystemEvents.DisplaySettingsChanged -= HandleDisplaySettingsChanged;
         _startupTimer.Dispose();
         _automationTimer.Dispose();
         _reapplyTimer.Dispose();
@@ -208,8 +289,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void HandleUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {
-        if (!ThemeManager.IsThemeRelatedChange(e.Category))
+        if (!ThemeManager.IsThemeRelatedChange(e.Category) || _disposed)
         {
+            return;
+        }
+
+        if (_trayMenu.InvokeRequired)
+        {
+            _trayMenu.BeginInvoke(new Action(ApplyCurrentTheme));
             return;
         }
 
