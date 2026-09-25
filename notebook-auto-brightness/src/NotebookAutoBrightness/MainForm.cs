@@ -46,7 +46,7 @@ internal sealed class MainForm : Form
     {
         _controller = controller;
 
-        Text = "Notebook Auto Brightness Settings";
+        Text = $"Notebook Auto Brightness Settings | build {AppRuntime.BuildVersion}";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(720, 660);

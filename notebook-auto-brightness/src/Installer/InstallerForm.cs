@@ -26,7 +26,7 @@ public sealed class InstallerForm : Form
 
     public InstallerForm()
     {
-        Text = InstallerOperations.AppDisplayName + " Setup";
+        Text = $"{InstallerOperations.AppDisplayName} Setup | build {InstallerOperations.BuildVersion}";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(720, 500);

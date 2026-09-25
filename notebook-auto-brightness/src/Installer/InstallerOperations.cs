@@ -16,6 +16,24 @@ public static class InstallerOperations
     public const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\NotebookSunriseSunsetAutoBrightness";
     public const string AutoRunValueName = "NotebookSunriseSunsetAutoBrightness";
 
+    // Stamped from the build date by the project file (1.0.<day>.<month>) so the installed programs
+    // list shows which build was actually installed.
+    public static string BuildVersion { get; } = ReadBuildVersion();
+
+    private static string ReadBuildVersion()
+    {
+        var informational = typeof(InstallerOperations).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+
+        if (string.IsNullOrWhiteSpace(informational))
+        {
+            return "unknown";
+        }
+
+        var separator = informational.IndexOf('+');
+        return separator < 0 ? informational : informational[..separator];
+    }
+
     public static string DefaultInstallDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         "Notebook Sunrise Sunset Auto Brightness");
@@ -261,7 +279,7 @@ public static class InstallerOperations
         }
 
         key.SetValue("DisplayName", AppDisplayName);
-        key.SetValue("DisplayVersion", "1.0.0");
+        key.SetValue("DisplayVersion", BuildVersion);
         key.SetValue("Publisher", "NotebookAutoBrightness");
         key.SetValue("InstallLocation", installDir);
         key.SetValue("DisplayIcon", appPath);
