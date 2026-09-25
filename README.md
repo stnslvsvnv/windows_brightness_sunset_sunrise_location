@@ -8,7 +8,7 @@ It can work by:
 
 ## What It Does
 
-- Runs in tray and applies brightness automatically every 15 seconds.
+- Runs in tray; the schedule check interval is configurable (5-60 seconds, 15 by default).
 - Re-applies the schedule on wake from sleep, session unlock, clock and display changes, and self-heals if a periodic pass was missed or a display wrote something else.
 - Uses separate `Day brightness` and `Night brightness` values.
 - Supports smooth transitions with cosine easing:
@@ -19,6 +19,7 @@ It can work by:
 - **Auto-switch Windows theme**: dark theme at night, light theme during the day.
 - Can start with Windows.
 - Can detect location via Windows location services (Wi-Fi/GNSS), IP geolocation, a fallback city and the last known location — in that order, and a location from an earlier time zone is treated as stale after a move.
+- Sunrise and sunset are computed locally from the coordinates (the same NOAA equations the public services use), so a slow or unreachable network never delays a theme switch.
 
 ## Quick Start (Ready Installer)
 

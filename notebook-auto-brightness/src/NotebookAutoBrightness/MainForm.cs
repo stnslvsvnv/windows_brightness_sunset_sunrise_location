@@ -25,10 +25,12 @@ internal sealed class MainForm : Form
     private readonly TrackBar _nightBrightness;
     private readonly TrackBar _transitionDuration;
     private readonly TrackBar _themeLeadTime;
+    private readonly TrackBar _checkInterval;
     private readonly Label _dayBrightnessValue;
     private readonly Label _nightBrightnessValue;
     private readonly Label _transitionDurationValue;
     private readonly Label _themeLeadTimeValue;
+    private readonly Label _checkIntervalValue;
     private readonly TextBox _cityTextBox;
     private readonly Label _locationLabel;
     private readonly Label _sunWindowLabel;
@@ -66,11 +68,13 @@ internal sealed class MainForm : Form
         _nightBrightness = CreateSlider(0, 100);
         _transitionDuration = CreateSlider(MinTransitionMinutes, MaxTransitionMinutes);
         _themeLeadTime = CreateSlider(MinTransitionMinutes, MaxTransitionMinutes);
+        _checkInterval = CreateSlider(1, 12); // 5..60 seconds, 5 second steps
 
         _dayBrightnessValue = CreateValueLabel();
         _nightBrightnessValue = CreateValueLabel();
         _transitionDurationValue = CreateValueLabel();
         _themeLeadTimeValue = CreateValueLabel();
+        _checkIntervalValue = CreateValueLabel();
 
         _cityTextBox = new TextBox
         {
@@ -142,6 +146,11 @@ internal sealed class MainForm : Form
         _themeLeadTime.ValueChanged += (_, _) =>
         {
             UpdateTransitionLabels();
+            SaveSettingsFromControls();
+        };
+        _checkInterval.ValueChanged += (_, _) =>
+        {
+            UpdateCheckIntervalLabel();
             SaveSettingsFromControls();
         };
         _cityTextBox.TextChanged += (_, _) => SaveSettingsFromControls();
@@ -248,6 +257,9 @@ internal sealed class MainForm : Form
         layout.Controls.Add(new Label { Text = "Transition duration", AutoSize = true }, 0, 2);
         layout.Controls.Add(_transitionDuration, 1, 2);
         layout.Controls.Add(_transitionDurationValue, 2, 2);
+        layout.Controls.Add(new Label { Text = "Check interval", AutoSize = true }, 0, 3);
+        layout.Controls.Add(_checkInterval, 1, 3);
+        layout.Controls.Add(_checkIntervalValue, 2, 3);
 
         return WrapGroup("Brightness", layout);
     }
@@ -340,11 +352,13 @@ internal sealed class MainForm : Form
         _nightBrightness.Value = Clamp(settings.NightBrightness);
         _transitionDuration.Value = ClampTransitionMinutes(settings.TransitionMinutes);
         _themeLeadTime.Value = ClampTransitionMinutes(settings.ThemeSwitchLeadMinutes);
+        _checkInterval.Value = ClampCheckIntervalSteps(settings.CheckIntervalSeconds);
         _dayStartPicker.Value = DateTime.Today.Add(settings.DayStartTime);
         _nightStartPicker.Value = DateTime.Today.Add(settings.NightStartTime);
         _cityTextBox.Text = settings.City ?? string.Empty;
         UpdateBrightnessLabels();
         UpdateTransitionLabels();
+        UpdateCheckIntervalLabel();
         UpdateThemeLeadState();
         _suppressSave = false;
     }
@@ -367,6 +381,7 @@ internal sealed class MainForm : Form
             NightBrightness = _nightBrightness.Value,
             TransitionMinutes = _transitionDuration.Value,
             ThemeSwitchLeadMinutes = _themeLeadTime.Value,
+            CheckIntervalSeconds = _checkInterval.Value * 5,
             DayStartTime = _dayStartPicker.Value.TimeOfDay,
             NightStartTime = _nightStartPicker.Value.TimeOfDay,
             City = _cityTextBox.Text.Trim()
@@ -524,6 +539,11 @@ internal sealed class MainForm : Form
 
     private static string FormatThemeLead(int value) =>
         value == 0 ? "No lead" : $"{value} min earlier (theme + transition)";
+
+    private void UpdateCheckIntervalLabel() =>
+        _checkIntervalValue.Text = $"{_checkInterval.Value * 5} sec";
+
+    private static int ClampCheckIntervalSteps(int seconds) => Math.Clamp((seconds + 2) / 5, 1, 12);
 
     private static int ClampTransitionMinutes(int value) => Math.Clamp(value, MinTransitionMinutes, MaxTransitionMinutes);
 
