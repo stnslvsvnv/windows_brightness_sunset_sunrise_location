@@ -14,8 +14,6 @@ public static class WindowsThemeController
     private const uint WmThemeChanged = 0x031A;
     private const uint SmtoAbortIfHung = 0x0002;
 
-    private static ThemeMode? _lastAppliedTheme;
-
     public enum ThemeMode
     {
         Light = 1,
@@ -36,7 +34,6 @@ public static class WindowsThemeController
             key.SetValue(AppsUseLightTheme, value, RegistryValueKind.DWord);
             key.SetValue(SystemUsesLightTheme, value, RegistryValueKind.DWord);
             BroadcastThemeChange();
-            _lastAppliedTheme = mode;
             return true;
         }
         catch
@@ -47,19 +44,11 @@ public static class WindowsThemeController
 
     // Switches the theme only when the system really differs and reports whether a switch (and its
     // system-wide broadcast) happened. Both registry values are checked: Windows lets the app mode
-    // and the system mode differ ("Custom" mode), so trusting only the apps value would leave the
-    // system theme dark while thinking everything is fine. An unreadable value is still not a
-    // reason to broadcast on every tick - once we set exactly this theme, it counts as applied.
+    // and the system mode differ ("Custom" mode), so trusting only the apps value could leave the
+    // system theme dark while the app believed it was done.
     public static bool EnsureTheme(ThemeMode mode)
     {
-        var apps = GetCurrentTheme();
-        var system = GetSystemTheme();
-        if (apps == mode && system == mode)
-        {
-            return false;
-        }
-
-        if (_lastAppliedTheme == mode && (apps == mode || apps == null))
+        if (GetCurrentTheme() == mode && GetSystemTheme() == mode)
         {
             return false;
         }

@@ -70,6 +70,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _startupTimer.Tick += async (_, _) => await SafeFinishStartupAsync();
         _startupTimer.Start();
 
+        ApplyCheckInterval();
         UpdateToggleMenuText();
         SystemEvents.UserPreferenceChanged += HandleUserPreferenceChanged;
         SystemEvents.PowerModeChanged += HandlePowerModeChanged;
@@ -215,16 +216,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private static string BuildSourceSuffix(string scheduleSource) =>
-        scheduleSource switch
-        {
-            AutomationController.SunScheduleSource => string.Empty,
-            AutomationController.SunScheduleSourceCached => " | cached",
-            _ => " | manual"
-        };
+        scheduleSource == AutomationController.SunScheduleSource
+            ? string.Empty
+            : " | manual";
 
     private void HandleSettingsChanged()
     {
         UpdateToggleMenuText();
+        ApplyCheckInterval();
+        // A settings change must be visible right away, not on the next tick.
+        RequestImmediateApply("settings changed");
+    }
+
+    private void ApplyCheckInterval()
+    {
+        _automationTimer.Interval = _controller.GetSettings().CheckIntervalSeconds * 1_000;
     }
 
     private void UpdateToggleMenuText()
