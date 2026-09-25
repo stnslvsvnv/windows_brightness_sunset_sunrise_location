@@ -9,6 +9,8 @@
     <AssemblyName>NotebookSunriseSunsetAutoBrightness</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\Assets\app.ico</ApplicationIcon>
+    <Version>1.0.$([System.DateTime]::Now.ToString('dd')).$([System.DateTime]::Now.ToString('MM'))</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Management" Version="8.0.0" />

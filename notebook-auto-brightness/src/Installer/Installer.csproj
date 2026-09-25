@@ -8,6 +8,8 @@
     <AssemblyName>NotebookAutoBrightnessSetup</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\Assets\app.ico</ApplicationIcon>
+    <Version>1.0.$([System.DateTime]::Now.ToString('dd')).$([System.DateTime]::Now.ToString('MM'))</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Shared\Ui\ThemeManager.cs" LinkBase="Ui" />

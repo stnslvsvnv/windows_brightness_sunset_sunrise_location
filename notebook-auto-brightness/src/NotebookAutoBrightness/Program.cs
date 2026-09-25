@@ -28,7 +28,7 @@ internal static class Program
             "unhandled",
             e.ExceptionObject as Exception ?? new InvalidOperationException("unknown failure"));
 
-        AppLog.Write($"{AppRuntime.AppName} started (pid {Environment.ProcessId})");
+        AppLog.Write($"{AppRuntime.AppName} {AppRuntime.BuildVersion} started (pid {Environment.ProcessId})");
 
         var showSettingsOnStart = !args.Any(static arg =>
             string.Equals(arg, AppRuntime.BackgroundArgument, StringComparison.OrdinalIgnoreCase) ||
